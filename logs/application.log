@@ -1,0 +1,87 @@
+2024-11-18 10:15:31 INFO  Starting request handling for /api/user
+2024-11-18 10:15:32 WARN  Slow response detected for /api/user
+2024-11-18 10:15:33 ERROR Database timeout while fetching user profile
+2024-11-18 10:15:36 INFO  Retrying database connection
+2024-11-18 10:15:40 WARN  High memory usage detected in service AuthService
+2024-11-18 10:15:41 ERROR OutOfMemoryError: Java heap space
+2024-11-18 10:15:46 INFO  Service recovered after GC cycle
+2024-11-18 10:15:50 WARN  Latency spike detected for /api/orders
+2024-11-18 10:15:55 INFO  Starting request handling for /api/orders
+2024-11-18 10:15:56 WARN  Slow response detected for /api/orders
+2024-11-18 10:15:57 INFO  Cache miss for user session token
+2024-11-18 10:15:59 ERROR Failed to write session data to Redis
+2024-11-18 10:16:02 INFO  Retrying Redis connection
+2024-11-18 10:16:05 WARN  Redis latency above threshold
+2024-11-18 10:16:07 INFO  Redis connection stabilized
+2024-11-18 10:16:10 ERROR Database timeout while executing SELECT on orders table
+2024-11-18 10:16:12 INFO  Starting request handling for /api/inventory
+2024-11-18 10:16:14 WARN  Inventory service response delayed
+2024-11-18 10:16:16 INFO  Inventory cache refreshed
+2024-11-18 10:16:20 WARN  High CPU usage detected in OrderService
+2024-11-18 10:16:22 ERROR Thread pool exhaustion in OrderService
+2024-11-18 10:16:25 INFO  Thread pool recovered after GC
+2024-11-18 10:16:28 INFO  Starting request handling for /api/auth/login
+2024-11-18 10:16:29 WARN  Authentication delay detected
+2024-11-18 10:16:30 ERROR Invalid credentials for user admin
+2024-11-18 10:16:33 INFO  Starting request handling for /api/auth/refresh
+2024-11-18 10:16:34 WARN  Token refresh latency high
+2024-11-18 10:16:36 INFO  Token refresh completed
+2024-11-18 10:16:40 WARN  Memory pressure rising in AuthService
+2024-11-18 10:16:41 ERROR OutOfMemoryError: Java heap space
+2024-11-18 10:16:45 INFO  AuthService restarted successfully
+2024-11-18 10:16:48 INFO  Starting request handling for /api/user
+2024-11-18 10:16:49 WARN  Slow response detected for /api/user
+2024-11-18 10:16:50 ERROR Database timeout while fetching user profile
+2024-11-18 10:16:53 INFO  Retrying database connection
+2024-11-18 10:16:56 WARN  High memory usage detected in service UserService
+2024-11-18 10:16:57 ERROR OutOfMemoryError: Java heap space
+2024-11-18 10:17:01 INFO  UserService recovered after GC cycle
+2024-11-18 10:17:04 INFO  Starting request handling for /api/orders
+2024-11-18 10:17:05 WARN  Latency spike detected for /api/orders
+2024-11-18 10:17:06 ERROR Failed to update order status
+2024-11-18 10:17:09 INFO  Retrying order update
+2024-11-18 10:17:12 WARN  Order update retry delayed
+2024-11-18 10:17:14 INFO  Order update completed
+2024-11-18 10:17:17 INFO  Starting request handling for /api/inventory
+2024-11-18 10:17:18 WARN  Inventory service response delayed
+2024-11-18 10:17:20 ERROR Inventory DB timeout
+2024-11-18 10:17:23 INFO  Inventory DB connection restored
+2024-11-18 10:17:26 WARN  High CPU usage detected in InventoryService
+2024-11-18 10:17:28 INFO  CPU usage normalized
+2024-11-18 10:17:31 INFO  Starting request handling for /api/auth/login
+2024-11-18 10:17:32 WARN  Authentication delay detected
+2024-11-18 10:17:33 ERROR Invalid credentials for user test
+2024-11-18 10:17:36 INFO  Starting request handling for /api/auth/refresh
+2024-11-18 10:17:37 WARN  Token refresh latency high
+2024-11-18 10:17:39 INFO  Token refresh completed
+2024-11-18 10:17:42 WARN  Memory pressure rising in AuthService
+2024-11-18 10:17:43 ERROR OutOfMemoryError: Java heap space
+2024-11-18 10:17:47 INFO  AuthService restarted successfully
+2024-11-18 10:17:50 INFO  Starting request handling for /api/user
+2024-11-18 10:17:51 WARN  Slow response detected for /api/user
+2024-11-18 10:17:52 ERROR Database timeout while fetching user profile
+2024-11-18 10:17:55 INFO  Retrying database connection
+2024-11-18 10:17:58 WARN  High memory usage detected in service UserService
+2024-11-18 10:17:59 ERROR OutOfMemoryError: Java heap space
+2024-11-18 10:18:03 INFO  UserService recovered after GC cycle
+2024-11-18 10:18:06 INFO  Starting request handling for /api/orders
+2024-11-18 10:18:07 WARN  Latency spike detected for /api/orders
+2024-11-18 10:18:08 ERROR Failed to update order status
+2024-11-18 10:18:11 INFO  Retrying order update
+2024-11-18 10:18:14 WARN  Order update retry delayed
+2024-11-18 10:18:16 INFO  Order update completed
+2024-11-18 10:18:19 INFO  Starting request handling for /api/inventory
+2024-11-18 10:18:20 WARN  Inventory service response delayed
+2024-11-18 10:18:22 ERROR Inventory DB timeout
+2024-11-18 10:18:25 INFO  Inventory DB connection restored
+2024-11-18 10:18:28 WARN  High CPU usage detected in InventoryService
+2024-11-18 10:18:30 INFO  CPU usage normalized
+2024-11-18 10:18:33 INFO  Starting request handling for /api/auth/login
+2024-11-18 10:18:34 WARN  Authentication delay detected
+2024-11-18 10:18:35 ERROR Invalid credentials for user admin
+2024-11-18 10:18:38 INFO  Starting request handling for /api/auth/refresh
+2024-11-18 10:18:39 WARN  Token refresh latency high
+2024-11-18 10:18:41 INFO  Token refresh completed
+2024-11-18 10:18:44 WARN  Memory pressure rising in AuthService
+2024-11-18 10:18:45 ERROR OutOfMemoryError: Java heap space
+2024-11-18 10:18:49 INFO  AuthService restarted successfully
