@@ -32,7 +32,7 @@ def convert(obj):
     return obj
 
 
-# ---------- GC log parser (matches your gc.log format) ----------
+# ---------- GC log parser ----------
 
 def parse_gc_log(file) -> pd.DataFrame:
     text = file.read().decode("utf-8", errors="ignore")
@@ -78,7 +78,6 @@ def parse_gc_log(file) -> pd.DataFrame:
 
     df = pd.DataFrame(records)
     if not df.empty:
-        # timezone-aware -> convert to UTC, then strip tz to make tz-naive
         df["gc_time"] = (
             pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
               .dt.tz_convert(None)
@@ -95,7 +94,7 @@ def parse_gc_log(file) -> pd.DataFrame:
     return df
 
 
-# ---------- App log parser (matches your app.log format) ----------
+# ---------- Application log parser ----------
 
 def parse_app_log(file) -> pd.DataFrame:
     text = file.read().decode("utf-8", errors="ignore")
@@ -266,18 +265,35 @@ def build_grouped_correlations(corr_df: pd.DataFrame):
     return grouped
 
 
-# ---------- AI insight generation ----------
+# ---------- AI insight generation (with modes) ----------
 
-def generate_ai_insight(correlations, model: str):
-    if isinstance(correlations, pd.DataFrame):
-        safe = correlations.to_dict(orient="records")
+def generate_ai_insight(data, model: str, mode: str):
+    if isinstance(data, pd.DataFrame):
+    # Convert DataFrame → list of dicts → JSON-safe values
+        safe = convert(data.to_dict(orient="records"))
     else:
-        safe = convert(correlations)
+        safe = convert(data)    
+
+    if mode == "full":
+        context = (
+            "You are analyzing correlated JVM GC logs and application logs. "
+            "Focus on how GC pauses impact application behavior, errors, latency, and resource usage."
+        )
+    elif mode == "gc_only":
+        context = (
+            "You are analyzing ONLY JVM GC logs. "
+            "Focus on memory pressure, pause times, GC frequency, heap behavior, and probable application impact."
+        )
+    elif mode == "app_only":
+        context = (
+            "You are analyzing ONLY application logs (no GC data). "
+            "Focus on errors, warnings, latency spikes, memory errors, and service health patterns."
+        )
+    else:
+        context = "You are analyzing JVM-related logs."
 
     prompt = f"""
-You are a JVM performance and observability expert.
-
-Analyze the following correlated GC and application log events.
+{context}
 
 You MUST respond with ONLY valid JSON.
 No markdown. No backticks. No commentary.
@@ -302,7 +318,7 @@ JSON schema:
   ]
 }}
 
-Correlations:
+Data:
 {json.dumps(safe, indent=2)}
 """
 
@@ -318,8 +334,7 @@ Correlations:
     except Exception:
         pass
 
-    import re as _re
-    match = _re.search(r"\{[\s\S]*\}", raw or "")
+    match = re.search(r"\{[\s\S]*\}", raw or "")
     if match:
         try:
             return json.loads(match.group(0))
@@ -337,9 +352,9 @@ Correlations:
     }
 
 
-# ---------- Report + ZIP ----------
+# ---------- Text report ----------
 
-def build_text_report(gc_df, app_df, correlations, insight) -> str:
+def build_text_report(gc_df, app_df, correlations, insight, mode: str) -> str:
     if insight is None:
         insight = {
             "root_cause": "Insight not generated.",
@@ -356,14 +371,16 @@ def build_text_report(gc_df, app_df, correlations, insight) -> str:
     lines.append("=" * 80)
     lines.append("")
     lines.append("1. Session Overview")
+    lines.append(f"- Mode: {mode}")
     lines.append(f"- GC events parsed: {len(gc_df) if gc_df is not None else 0}")
     lines.append(f"- App log entries parsed: {len(app_df) if app_df is not None else 0}")
+    lines.append(f"- Correlated events: {len(correlations) if isinstance(correlations, pd.DataFrame) else 0}")
     lines.append("")
 
     if isinstance(correlations, pd.DataFrame):
         corr_json = correlations.to_dict(orient="records")
     else:
-        corr_json = convert(correlations)
+        corr_json = convert(correlations) if correlations is not None else []
 
     lines.append("2. Correlation Summary (JSON)")
     lines.append(json.dumps(corr_json, indent=2))
@@ -390,7 +407,10 @@ def build_text_report(gc_df, app_df, correlations, insight) -> str:
 
     return "\n".join(lines)
 
-def build_html_report(gc_df, app_df, correlations, insight) -> str:
+
+# ---------- HTML report builder ----------
+
+def build_html_report(gc_df, app_df, correlations, insight, mode: str) -> str:
     if insight is None:
         insight = {
             "root_cause": "Insight not generated.",
@@ -402,17 +422,14 @@ def build_html_report(gc_df, app_df, correlations, insight) -> str:
             "next_steps": [],
         }
 
-    # Safety: convert to JSON-friendly dicts for embedding
     gc_count = len(gc_df) if gc_df is not None else 0
     app_count = len(app_df) if app_df is not None else 0
     corr_count = len(correlations) if isinstance(correlations, pd.DataFrame) else 0
 
-    # Convert dataframes to HTML tables
-    gc_table_html = gc_df.to_html(index=False, classes="table table-sm table-striped") if gc_df is not None else ""
-    app_table_html = app_df.to_html(index=False, classes="table table-sm table-striped") if app_df is not None else ""
-    corr_table_html = correlations.to_html(index=False, classes="table table-sm table-striped") if isinstance(correlations, pd.DataFrame) else ""
+    gc_table_html = gc_df.to_html(index=False, classes="table table-sm table-striped") if gc_df is not None and not gc_df.empty else ""
+    app_table_html = app_df.to_html(index=False, classes="table table-sm table-striped") if app_df is not None and not app_df.empty else ""
+    corr_table_html = correlations.to_html(index=False, classes="table table-sm table-striped") if isinstance(correlations, pd.DataFrame) and not correlations.empty else ""
 
-    # Top 10 views for summary page
     top_gc = (
         gc_df.sort_values("pause_ms", ascending=False)
         .head(10)
@@ -441,7 +458,51 @@ def build_html_report(gc_df, app_df, correlations, insight) -> str:
     rec_items = "".join(f"<li>{r}</li>" for r in insight.get("recommendations", [])[:10])
     next_items = "".join(f"<li>{s}</li>" for s in insight.get("next_steps", [])[:10])
 
-    # Simple Bootstrap-based tabbed HTML
+    gc_tab_button = ""
+    gc_tab_pane = ""
+    if gc_df is not None and not gc_df.empty:
+        gc_tab_button = """
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="gc-tab" data-bs-toggle="tab" data-bs-target="#gc" type="button" role="tab">GC Details</button>
+    </li>
+"""
+        gc_tab_pane = f"""
+    <div class="tab-pane fade" id="gc" role="tabpanel" aria-labelledby="gc-tab">
+      <h3 class="mt-3">GC Details (full)</h3>
+      {gc_table_html or "<p><em>No GC data available.</em></p>"}
+    </div>
+"""
+
+    app_tab_button = ""
+    app_tab_pane = ""
+    if app_df is not None and not app_df.empty:
+        app_tab_button = """
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="app-tab" data-bs-toggle="tab" data-bs-target="#app" type="button" role="tab">App Log Details</button>
+    </li>
+"""
+        app_tab_pane = f"""
+    <div class="tab-pane fade" id="app" role="tabpanel" aria-labelledby="app-tab">
+      <h3 class="mt-3">Application Log Details (full)</h3>
+      {app_table_html or "<p><em>No App log data available.</em></p>"}
+    </div>
+"""
+
+    corr_tab_button = ""
+    corr_tab_pane = ""
+    if isinstance(correlations, pd.DataFrame) and not correlations.empty:
+        corr_tab_button = """
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="corr-tab" data-bs-toggle="tab" data-bs-target="#corr" type="button" role="tab">Correlations</button>
+    </li>
+"""
+        corr_tab_pane = f"""
+    <div class="tab-pane fade" id="corr" role="tabpanel" aria-labelledby="corr-tab">
+      <h3 class="mt-3">Correlations (full)</h3>
+      {corr_table_html or "<p><em>No correlation data available.</em></p>"}
+    </div>
+"""
+
     html = f"""
 <!DOCTYPE html>
 <html>
@@ -461,34 +522,26 @@ def build_html_report(gc_df, app_df, correlations, insight) -> str:
 <body>
 <div class="container-fluid">
   <h1 class="mb-3">JVM AI Observability Report</h1>
-  <p class="text-muted">Generated at {datetime.now().isoformat()}</p>
+  <p class="text-muted">Generated at {datetime.now().isoformat()} | Mode: {mode}</p>
 
-  <!-- Nav tabs -->
   <ul class="nav nav-tabs" id="reportTabs" role="tablist">
     <li class="nav-item" role="presentation">
       <button class="nav-link active" id="summary-tab" data-bs-toggle="tab" data-bs-target="#summary" type="button" role="tab">Summary & Highlights</button>
     </li>
-    <li class="nav-item" role="presentation">
-      <button class="nav-link" id="gc-tab" data-bs-toggle="tab" data-bs-target="#gc" type="button" role="tab">GC Details</button>
-    </li>
-    <li class="nav-item" role="presentation">
-      <button class="nav-link" id="app-tab" data-bs-toggle="tab" data-bs-target="#app" type="button" role="tab">App Log Details</button>
-    </li>
-    <li class="nav-item" role="presentation">
-      <button class="nav-link" id="corr-tab" data-bs-toggle="tab" data-bs-target="#corr" type="button" role="tab">Correlations</button>
-    </li>
+    {gc_tab_button}
+    {app_tab_button}
+    {corr_tab_button}
     <li class="nav-item" role="presentation">
       <button class="nav-link" id="ai-tab" data-bs-toggle="tab" data-bs-target="#ai" type="button" role="tab">AI Insight</button>
     </li>
   </ul>
 
-  <!-- Tab panes -->
   <div class="tab-content">
 
-    <!-- Summary & Highlights -->
     <div class="tab-pane fade show active" id="summary" role="tabpanel" aria-labelledby="summary-tab">
       <h3 class="mt-3">Summary</h3>
       <ul>
+        <li><strong>Mode:</strong> {mode}</li>
         <li><strong>GC events parsed:</strong> {gc_count}</li>
         <li><strong>App log entries parsed:</strong> {app_count}</li>
         <li><strong>Correlated events:</strong> {corr_count}</li>
@@ -523,25 +576,10 @@ def build_html_report(gc_df, app_df, correlations, insight) -> str:
       {top_corr or "<p><em>No correlations available.</em></p>"}
     </div>
 
-    <!-- GC Details -->
-    <div class="tab-pane fade" id="gc" role="tabpanel" aria-labelledby="gc-tab">
-      <h3 class="mt-3">GC Details (full)</h3>
-      {gc_table_html or "<p><em>No GC data available.</em></p>"}
-    </div>
+    {gc_tab_pane}
+    {app_tab_pane}
+    {corr_tab_pane}
 
-    <!-- App Log Details -->
-    <div class="tab-pane fade" id="app" role="tabpanel" aria-labelledby="app-tab">
-      <h3 class="mt-3">Application Log Details (full)</h3>
-      {app_table_html or "<p><em>No App log data available.</em></p>"}
-    </div>
-
-    <!-- Correlations -->
-    <div class="tab-pane fade" id="corr" role="tabpanel" aria-labelledby="corr-tab">
-      <h3 class="mt-3">Correlations (full)</h3>
-      {corr_table_html or "<p><em>No correlation data available.</em></p>"}
-    </div>
-
-    <!-- AI Insight -->
     <div class="tab-pane fade" id="ai" role="tabpanel" aria-labelledby="ai-tab">
       <h3 class="mt-3">AI Insight (raw JSON)</h3>
       <pre>{json.dumps(convert(insight), indent=2)}</pre>
@@ -556,6 +594,9 @@ def build_html_report(gc_df, app_df, correlations, insight) -> str:
 """
     return html
 
+
+# ---------- ZIP builder ----------
+
 def build_full_session_zip(gc_df, app_df, correlations, insight, text_report: str) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -564,12 +605,14 @@ def build_full_session_zip(gc_df, app_df, correlations, insight, text_report: st
         if app_df is not None and not app_df.empty:
             zf.writestr("app_parsed.csv", app_df.to_csv(index=False))
 
-        if isinstance(correlations, pd.DataFrame):
+        if isinstance(correlations, pd.DataFrame) and not correlations.empty:
             corr_json = correlations.to_dict(orient="records")
-        else:
+        elif correlations is not None:
             corr_json = convert(correlations)
-        zf.writestr("correlations.json", json.dumps(corr_json, indent=2))
+        else:
+            corr_json = []
 
+        zf.writestr("correlations.json", json.dumps(corr_json, indent=2))
         zf.writestr("ai_insight.json", json.dumps(convert(insight), indent=2))
         zf.writestr("ai_insight_report.txt", text_report)
 
@@ -668,12 +711,10 @@ def plot_gc_pause_heatmap(gc_df: pd.DataFrame):
 st.set_page_config(page_title="Logs Heap AI Analyzer", layout="wide")
 st.title("Logs Heap AI Analyzer")
 
-# Initialize session state
-for key in ["gc_df", "app_df", "correlations", "insight"]:
+for key in ["gc_df", "app_df", "correlations", "insight", "ai_mode"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
-# Sidebar
 with st.sidebar:
     st.header("⚙️ Settings")
 
@@ -717,30 +758,38 @@ with tab1:
     gc_file = st.file_uploader("GC Log", type=["log", "txt"], key="gc_log")
     app_file = st.file_uploader("Application Log", type=["log", "txt"], key="app_log")
 
-    if gc_file and app_file:
+    if gc_file or app_file:
         with st.spinner("Parsing logs..."):
-            gc_df = parse_gc_log(gc_file)
-            app_df = parse_app_log(app_file)
+            gc_df = parse_gc_log(gc_file) if gc_file else None
+            app_df = parse_app_log(app_file) if app_file else None
 
         st.session_state.gc_df = gc_df
         st.session_state.app_df = app_df
         st.session_state.correlations = None
         st.session_state.insight = None
+        st.session_state.ai_mode = None
 
-        st.success(f"Parsed GC events: {len(gc_df)}, App entries: {len(app_df)}")
+        st.success(f"Parsed GC events: {len(gc_df) if gc_df is not None else 0}, "
+                   f"App entries: {len(app_df) if app_df is not None else 0}")
 
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown("**Sample GC rows**")
-            st.dataframe(gc_df.head(10), use_container_width=True)
+            if gc_df is not None and not gc_df.empty:
+                st.markdown("**Sample GC rows**")
+                st.dataframe(gc_df.head(10), use_container_width=True)
+            else:
+                st.info("No GC log uploaded or parsed.")
         with col2:
-            st.markdown("**Sample App rows**")
-            st.dataframe(app_df.head(10), use_container_width=True)
+            if app_df is not None and not app_df.empty:
+                st.markdown("**Sample App rows**")
+                st.dataframe(app_df.head(10), use_container_width=True)
+            else:
+                st.info("No Application log uploaded or parsed.")
     else:
-        st.info("Upload both GC and Application logs to begin.")
+        st.info("Upload at least one log (GC or Application) to begin.")
 
 
-# ---------- Tab 2: Parsed Data (with summary panels) ----------
+# ---------- Tab 2: Parsed Data ----------
 
 with tab2:
     st.subheader("Parsed Data")
@@ -748,45 +797,63 @@ with tab2:
     gc_df = st.session_state.gc_df
     app_df = st.session_state.app_df
 
-    if gc_df is None or app_df is None:
+    if (gc_df is None or gc_df.empty) and (app_df is None or app_df.empty):
         st.info("Upload logs in the first tab to see parsed data.")
     else:
         st.markdown("### 🔍 Quick Highlights")
 
-        col_top_gc, col_top_err, col_top_warn = st.columns(3)
+        if gc_df is not None and not gc_df.empty and app_df is not None and not app_df.empty:
+            col_top_gc, col_top_err, col_top_warn = st.columns(3)
+        elif gc_df is not None and not gc_df.empty:
+            col_top_gc, = st.columns(1)
+            col_top_err = col_top_warn = None
+        elif app_df is not None and not app_df.empty:
+            col_top_err, col_top_warn = st.columns(2)
+            col_top_gc = None
+        else:
+            col_top_gc = col_top_err = col_top_warn = None
 
-        with col_top_gc:
-            st.markdown("**Top 10 GC Pauses**")
-            top_gc = gc_df.sort_values("pause_ms", ascending=False).head(10)
-            st.dataframe(top_gc[["timestamp", "event", "pause_ms", "severity"]], use_container_width=True, height=260)
+        if gc_df is not None and not gc_df.empty and col_top_gc is not None:
+            with col_top_gc:
+                st.markdown("**Top 10 GC Pauses**")
+                top_gc = gc_df.sort_values("pause_ms", ascending=False).head(10)
+                st.dataframe(top_gc[["timestamp", "event", "pause_ms", "severity"]], use_container_width=True, height=260)
 
-        with col_top_err:
-            st.markdown("**Top 10 ERROR Logs**")
-            top_errors = app_df[app_df["level"] == "ERROR"].head(10)
-            st.dataframe(top_errors[["timestamp", "level", "message", "category"]], use_container_width=True, height=260)
+        if app_df is not None and not app_df.empty and col_top_err is not None:
+            with col_top_err:
+                st.markdown("**Top 10 ERROR Logs**")
+                top_errors = app_df[app_df["level"] == "ERROR"].head(10)
+                st.dataframe(top_errors[["timestamp", "level", "message", "category"]], use_container_width=True, height=260)
 
-        with col_top_warn:
-            st.markdown("**Top 10 WARN Logs**")
-            top_warns = app_df[app_df["level"] == "WARN"].head(10)
-            st.dataframe(top_warns[["timestamp", "level", "message", "category"]], use_container_width=True, height=260)
+        if app_df is not None and not app_df.empty and col_top_warn is not None:
+            with col_top_warn:
+                st.markdown("**Top 10 WARN Logs**")
+                top_warns = app_df[app_df["level"] == "WARN"].head(10)
+                st.dataframe(top_warns[["timestamp", "level", "message", "category"]], use_container_width=True, height=260)
 
         st.markdown("---")
 
         gc_col, app_col = st.columns(2)
         with gc_col:
             st.markdown("### GC Parsed Data (full)")
-            st.dataframe(gc_df, use_container_width=True, height=400)
-            st.markdown("**GC Severity Breakdown**")
-            st.bar_chart(gc_df["severity"].value_counts())
+            if gc_df is not None and not gc_df.empty:
+                st.dataframe(gc_df, use_container_width=True, height=400)
+                st.markdown("**GC Severity Breakdown**")
+                st.bar_chart(gc_df["severity"].value_counts())
+            else:
+                st.info("No GC data available.")
 
         with app_col:
             st.markdown("### Application Parsed Data (full)")
-            st.dataframe(app_df, use_container_width=True, height=400)
-            st.markdown("**App Log Level Distribution**")
-            st.bar_chart(app_df["level"].value_counts())
+            if app_df is not None and not app_df.empty:
+                st.dataframe(app_df, use_container_width=True, height=400)
+                st.markdown("**App Log Level Distribution**")
+                st.bar_chart(app_df["level"].value_counts())
+            else:
+                st.info("No Application log data available.")
 
 
-# ---------- Tab 3: Correlation (with summary panels in correct order) ----------
+# ---------- Tab 3: Correlation ----------
 
 with tab3:
     st.subheader("Correlation")
@@ -794,8 +861,8 @@ with tab3:
     gc_df = st.session_state.gc_df
     app_df = st.session_state.app_df
 
-    if gc_df is None or app_df is None:
-        st.info("Upload and parse logs first to see correlations.")
+    if gc_df is None or gc_df.empty or app_df is None or app_df.empty:
+        st.info("Correlation requires both GC and Application logs.")
     else:
         with st.spinner("Computing correlations..."):
             correlations = correlate(gc_df, app_df, window_size, spike_factor)
@@ -805,10 +872,6 @@ with tab3:
         if correlations is None or correlations.empty:
             st.warning("No correlations found. Try increasing the window size or check timestamp formats.")
         else:
-
-            # ---------------------------------------------------------
-            # 1. Top 10 by Correlation Score (full columns visible)
-            # ---------------------------------------------------------
             st.markdown("### 🚨 Top 10 by Correlation Score")
 
             top_corr = correlations.sort_values("correlation_score", ascending=False).head(10)
@@ -830,9 +893,6 @@ with tab3:
 
             st.markdown("---")
 
-            # ---------------------------------------------------------
-            # 2. Top 10 by Time Difference (ms)
-            # ---------------------------------------------------------
             st.markdown("### ⏱ Top 10 by Time Difference (ms)")
 
             top_diff = correlations.reindex(
@@ -854,29 +914,17 @@ with tab3:
 
             st.markdown("---")
 
-            # ---------------------------------------------------------
-            # 3. Correlation Severity Distribution
-            # ---------------------------------------------------------
             st.markdown("### 📊 Correlation Severity Distribution")
-
             st.bar_chart(correlations["correlation_severity"].value_counts())
 
             st.markdown("---")
 
-            # ---------------------------------------------------------
-            # 4. Full Correlation Table
-            # ---------------------------------------------------------
             st.markdown("### 📄 Full Correlation Table")
-
             st.dataframe(correlations, use_container_width=True, height=400)
 
             st.markdown("---")
 
-            # ---------------------------------------------------------
-            # 5. Grouped View (GC Event → App Events)
-            # ---------------------------------------------------------
             st.markdown("### 🧩 Grouped View (GC Event → App Events)")
-
             grouped = build_grouped_correlations(correlations)
             for group in grouped:
                 with st.expander(
@@ -892,7 +940,7 @@ with tab3:
                     st.table(pd.DataFrame(group["app_events"]))
 
 
-# ---------- Tab 4: AI Insight (with summary panel) ----------
+# ---------- Tab 4: AI Insight ----------
 
 with tab4:
     st.subheader("AI Insight")
@@ -901,58 +949,76 @@ with tab4:
     app_df = st.session_state.app_df
     correlations = st.session_state.correlations
 
-    if gc_df is None or app_df is None:
-        st.info("Upload and parse logs first to generate AI insight.")
-    elif correlations is None or correlations.empty:
-        st.info("Compute correlations in the Correlation tab first, then return here.")
+    if (gc_df is None or gc_df.empty) and (app_df is None or app_df.empty):
+        st.info("Upload at least one log (GC or Application) to generate AI insight.")
     else:
-        if st.session_state.insight is None:
-            progress = st.progress(0, text="Preparing AI analysis...")
-
-            progress.progress(25, text="Converting correlations to JSON-safe format...")
-            _ = correlations.to_dict(orient="records")
-
-            progress.progress(50, text=f"Building prompt for model: {selected_model}...")
-            progress.progress(75, text="Sending request to AI model...")
-
-            with st.spinner("AI is analyzing JVM behavior and application impact..."):
-                insight = generate_ai_insight(correlations, selected_model)
-
-            progress.progress(100, text="AI analysis complete!")
-            st.session_state.insight = insight
+        if gc_df is not None and not gc_df.empty and app_df is not None and not app_df.empty and correlations is not None and not correlations.empty:
+            data_for_ai = correlations
+            mode = "full"
+        elif gc_df is not None and not gc_df.empty:
+            data_for_ai = gc_df
+            mode = "gc_only"
+        elif app_df is not None and not app_df.empty:
+            data_for_ai = app_df
+            mode = "app_only"
         else:
-            insight = st.session_state.insight
+            st.info("No usable data found for AI insight.")
+            data_for_ai = None
+            mode = None
 
-        st.markdown("### 🧠 Key Findings")
+        st.session_state.ai_mode = mode
 
-        st.write(f"**Root cause:** {insight.get('root_cause', '')}")
-        st.write(f"**Impact:** {insight.get('impact', '')}")
-        st.write(f"**Confidence:** {insight.get('confidence', '')}")
-        st.write(f"**Confidence explanation:** {insight.get('confidence_explanation', '')}")
+        if data_for_ai is None or mode is None:
+            st.info("Please ensure at least one parsed dataset is available.")
+        else:
+            if st.session_state.insight is None:
+                progress = st.progress(0, text="Preparing AI analysis...")
 
-        col_e, col_r, col_n = st.columns(3)
+                progress.progress(25, text="Converting data to JSON-safe format...")
+                _ = data_for_ai.to_dict(orient="records") if isinstance(data_for_ai, pd.DataFrame) else convert(data_for_ai)
 
-        with col_e:
-            st.markdown("**Top Evidence (up to 10)**")
-            for e in insight.get("evidence", [])[:10]:
-                st.markdown(f"- {e}")
+                progress.progress(50, text=f"Building prompt for model: {selected_model}...")
+                progress.progress(75, text="Sending request to AI model...")
 
-        with col_r:
-            st.markdown("**Recommendations**")
-            for r in insight.get("recommendations", [])[:10]:
-                st.markdown(f"- {r}")
+                with st.spinner("AI is analyzing JVM behavior and application impact..."):
+                    insight = generate_ai_insight(data_for_ai, selected_model, mode)
 
-        with col_n:
-            st.markdown("**Next steps**")
-            for s in insight.get("next_steps", [])[:10]:
-                st.markdown(f"- {s}")
+                progress.progress(100, text="AI analysis complete!")
+                st.session_state.insight = insight
+            else:
+                insight = st.session_state.insight
 
-        st.markdown("---")
-        st.markdown("### Raw Insight JSON")
-        st.json(insight)
+            st.markdown("### 🧠 Key Findings")
+
+            st.write(f"**Mode:** {mode}")
+            st.write(f"**Root cause:** {insight.get('root_cause', '')}")
+            st.write(f"**Impact:** {insight.get('impact', '')}")
+            st.write(f"**Confidence:** {insight.get('confidence', '')}")
+            st.write(f"**Confidence explanation:** {insight.get('confidence_explanation', '')}")
+
+            col_e, col_r, col_n = st.columns(3)
+
+            with col_e:
+                st.markdown("**Top Evidence (up to 10)**")
+                for e in insight.get("evidence", [])[:10]:
+                    st.markdown(f"- {e}")
+
+            with col_r:
+                st.markdown("**Recommendations**")
+                for r in insight.get("recommendations", [])[:10]:
+                    st.markdown(f"- {r}")
+
+            with col_n:
+                st.markdown("**Next steps**")
+                for s in insight.get("next_steps", [])[:10]:
+                    st.markdown(f"- {s}")
+
+            st.markdown("---")
+            st.markdown("### Raw Insight JSON")
+            st.json(insight)
 
 
-# ---------- Tab 5: Visualizations (with quick stats) ----------
+# ---------- Tab 5: Visualizations ----------
 
 with tab5:
     st.subheader("Visualizations")
@@ -961,28 +1027,29 @@ with tab5:
     app_df = st.session_state.app_df
     correlations = st.session_state.correlations
 
-    if gc_df is None or app_df is None:
+    if (gc_df is None or gc_df.empty) and (app_df is None or app_df.empty):
         st.info("Upload and parse logs first.")
     else:
         st.markdown("### 📊 Quick Stats")
 
         col_s1, col_s2, col_s3 = st.columns(3)
         with col_s1:
-            st.metric("Total GC Events", len(gc_df))
+            st.metric("Total GC Events", len(gc_df) if gc_df is not None else 0)
         with col_s2:
-            st.metric("Total App Logs", len(app_df))
+            st.metric("Total App Logs", len(app_df) if app_df is not None else 0)
         with col_s3:
             st.metric("Correlated Events", len(correlations) if correlations is not None else 0)
 
         st.markdown("---")
 
-        gc_fig = plot_gc_timeline(gc_df)
-        if gc_fig:
-            st.plotly_chart(gc_fig, use_container_width=True)
+        if gc_df is not None and not gc_df.empty:
+            gc_fig = plot_gc_timeline(gc_df)
+            if gc_fig:
+                st.plotly_chart(gc_fig, use_container_width=True)
 
-        heatmap_fig = plot_gc_pause_heatmap(gc_df)
-        if heatmap_fig:
-            st.plotly_chart(heatmap_fig, use_container_width=True)
+            heatmap_fig = plot_gc_pause_heatmap(gc_df)
+            if heatmap_fig:
+                st.plotly_chart(heatmap_fig, use_container_width=True)
 
         if correlations is not None and not correlations.empty:
             corr_fig = plot_correlation_timeline(correlations)
@@ -999,16 +1066,16 @@ with tab6:
     app_df = st.session_state.app_df
     correlations = st.session_state.correlations
     insight = st.session_state.insight
+    mode = st.session_state.ai_mode or "unknown"
 
-    if gc_df is None or app_df is None:
+    if (gc_df is None or gc_df.empty) and (app_df is None or app_df.empty):
         st.info("Upload and parse logs first to enable downloads.")
-    elif correlations is None or (isinstance(correlations, pd.DataFrame) and correlations.empty):
-        st.info("Compute correlations in the Correlation tab first.")
     elif insight is None:
         st.info("Generate AI insight in the AI Insight tab first.")
     else:
-        text_report = build_text_report(gc_df, app_df, correlations, insight)
+        text_report = build_text_report(gc_df, app_df, correlations, insight, mode)
         full_zip = build_full_session_zip(gc_df, app_df, correlations, insight, text_report)
+        html_report = build_html_report(gc_df, app_df, correlations, insight, mode)
 
         st.download_button(
             label="Download Full Session Report (ZIP)",
@@ -1016,8 +1083,6 @@ with tab6:
             file_name=f"jvm_session_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
             mime="application/zip",
         )
-            # Build HTML report
-        html_report = build_html_report(gc_df, app_df, correlations, insight)
 
         st.download_button(
             label="Download Full Session Report (HTML)",
