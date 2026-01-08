@@ -867,6 +867,21 @@ with st.sidebar:
     window_size = st.slider("Correlation Window (seconds)", 1, 30, 5)
     spike_factor = st.slider("GC Spike Threshold (x mean)", 1.0, 3.0, 1.5)
 
+    # --- Hard Reset Button (no confirmation) ---
+    if st.button("🔄 Reset Session"):
+        # Clear parsed data
+        for key in ["gc_df", "app_df", "correlations", "insight", "ai_mode"]:
+            st.session_state[key] = None
+
+        # Clear file uploader widget state safely
+        if "gc_log" in st.session_state:
+            del st.session_state["gc_log"]
+        if "app_log" in st.session_state:
+            del st.session_state["app_log"]
+
+        # Immediately rerun the app
+        st.rerun()
+    
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📥 Upload Logs",
     "📄 Parsed Data",
@@ -1018,6 +1033,31 @@ with tab2:
 with tab3:
     st.subheader("Correlation")
 
+    st.markdown("""
+<div style="
+    margin-top:8px;
+    padding:14px 16px;
+    background:rgba(56,189,248,0.08);
+    border-left:4px solid #38BDF8;
+    border-radius:8px;
+    font-size:14px;
+">
+    <strong style="color:#38BDF8;">What does Correlation mean?</strong>
+    <p style="color:#E2E8F0; margin-top:6px;">
+        Correlation links GC pauses with application log events that occur within
+        your selected time window. If an app error, warning, or slowdown happens
+        shortly before or after a GC pause, the analyzer treats them as related.
+        Each match is scored based on:
+        <ul>
+            <li><strong>GC pause severity</strong> (longer pauses score higher)</li>
+            <li><strong>App log level</strong> (ERROR > WARN > INFO)</li>
+            <li><strong>Time difference</strong> between GC and app event</li>
+        </ul>
+        Higher scores indicate stronger evidence that a GC event impacted the application.
+    </p>
+</div>
+""", unsafe_allow_html=True)
+    
     gc_df = st.session_state.gc_df
     app_df = st.session_state.app_df
 
