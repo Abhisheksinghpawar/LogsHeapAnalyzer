@@ -29,6 +29,8 @@ def convert(obj):
         return bool(obj)
     if isinstance(obj, np.ndarray):
         return obj.tolist()
+    if isinstance(obj, float) and np.isnan(obj):
+        return None
     return obj
 
 
@@ -268,11 +270,11 @@ def build_grouped_correlations(corr_df: pd.DataFrame):
 # ---------- AI insight generation (with modes) ----------
 
 def generate_ai_insight(data, model: str, mode: str):
+    # Always JSON-safe convert
     if isinstance(data, pd.DataFrame):
-    # Convert DataFrame → list of dicts → JSON-safe values
         safe = convert(data.to_dict(orient="records"))
     else:
-        safe = convert(data)    
+        safe = convert(data)
 
     if mode == "full":
         context = (
@@ -514,9 +516,17 @@ def build_html_report(gc_df, app_df, correlations, insight, mode: str) -> str:
       rel="stylesheet"
     >
     <style>
-      body {{ padding: 20px; }}
+      body {{ padding: 20px; background: #020617; color: #E5E7EB; }}
       .tab-content {{ margin-top: 20px; }}
-      pre {{ white-space: pre-wrap; }}
+      pre {{ white-space: pre-wrap; background:#020617; color:#E5E7EB; padding:12px; border-radius:8px; }}
+      .nav-tabs .nav-link.active {{
+          background-color: #0F172A;
+          color: #67E8F9;
+          border-color: #0EA5E9;
+      }}
+      .nav-tabs .nav-link {{
+          color: #E5E7EB;
+      }}
     </style>
 </head>
 <body>
@@ -634,7 +644,14 @@ def plot_gc_timeline(gc_df: pd.DataFrame):
         hover_data=["event", "heap_before_k", "heap_after_k", "heap_total_k"],
         title="GC Timeline (pause duration over time)",
     )
-    fig.update_layout(xaxis_title="Time", yaxis_title="Pause (ms)")
+    fig.update_layout(
+        xaxis_title="Time",
+        yaxis_title="Pause (ms)",
+        plot_bgcolor="#020617",
+        paper_bgcolor="#020617",
+        font_color="#E5E7EB",
+        legend=dict(bgcolor="#020617")
+    )
     return fig
 
 
@@ -647,7 +664,7 @@ def plot_correlation_timeline(corr_df: pd.DataFrame):
         x=pd.to_datetime(corr_df["gc_timestamp"]),
         y=[0] * len(corr_df),
         mode="markers",
-        marker=dict(size=10, color="red"),
+        marker=dict(size=10, color="#F97316"),
         name="GC Event",
         text=[
             f"{row['gc_event']} ({row['gc_pause_ms']} ms)"
@@ -660,7 +677,7 @@ def plot_correlation_timeline(corr_df: pd.DataFrame):
         x=pd.to_datetime(corr_df["app_timestamp"]),
         y=[1] * len(corr_df),
         mode="markers",
-        marker=dict(size=9, color="blue"),
+        marker=dict(size=9, color="#38BDF8"),
         name="App Event",
         text=[
             f"{row['app_level']} - {row['app_message']}"
@@ -679,6 +696,10 @@ def plot_correlation_timeline(corr_df: pd.DataFrame):
         ),
         showlegend=True,
         height=400,
+        plot_bgcolor="#020617",
+        paper_bgcolor="#020617",
+        font_color="#E5E7EB",
+        legend=dict(bgcolor="#020617")
     )
     return fig
 
@@ -702,21 +723,126 @@ def plot_gc_pause_heatmap(gc_df: pd.DataFrame):
         labels=dict(x="Time (minute)", y="GC Category", color="Total Pause (ms)"),
         aspect="auto",
         title="GC Pause Heatmap (by category and minute)",
+        color_continuous_scale="Turbo",
+    )
+    fig.update_layout(
+        plot_bgcolor="#020617",
+        paper_bgcolor="#020617",
+        font_color="#E5E7EB",
     )
     return fig
 
 
-# ---------- Streamlit UI ----------
+# ---------- Streamlit UI (AI theme + neat tabs) ----------
 
 st.set_page_config(page_title="Logs Heap AI Analyzer", layout="wide")
-st.title("Logs Heap AI Analyzer")
+
+# Global CSS for techy AI look + neater tabs
+st.markdown("""
+<style>
+body {
+    background-color: #020617;
+    color: #E5E7EB;
+}
+[data-testid="stAppViewContainer"] {
+    background-color: #020617;
+}
+[data-testid="stSidebar"] {
+    background-color: #020617;
+}
+tbody tr:hover {
+    background-color: rgba(8,47,73,0.85) !important;
+}
+hr.ai-divider {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #22D3EE, transparent);
+    margin: 30px 0;
+}
+
+/* Neater, modern tab styling */
+.stTabs [data-baseweb="tab"] {
+    background: #0F172A;
+    color: #CBD5E1;
+    padding: 10px 18px;
+    border-radius: 8px;
+    margin-right: 6px;
+    border: 1px solid #1E293B;
+    font-weight: 500;
+    transition: all 0.15s ease-in-out;
+}
+.stTabs [data-baseweb="tab"]:hover {
+    background: #1E293B;
+    color: #F0F9FF;
+    border-color: #38BDF8;
+}
+.stTabs [aria-selected="true"] {
+    background: linear-gradient(90deg, #0EA5E9, #38BDF8);
+    color: #0F172A !important;
+    border-color: #38BDF8;
+    font-weight: 600;
+    box-shadow: 0 0 12px rgba(56,189,248,0.45);
+}
+</style>
+""", unsafe_allow_html=True)
+
+# Floating AI badge
+st.markdown("""
+<div style="
+    position:fixed;
+    top:16px;
+    right:20px;
+    padding:8px 14px;
+    background:#020617;
+    border-radius:999px;
+    border:1px solid #0EA5E9;
+    color:#67E8F9;
+    font-weight:600;
+    font-size:13px;
+    box-shadow:0 0 16px rgba(14,165,233,0.45);
+    z-index:1000;
+">
+    🤖 AI Insight Engine
+</div>
+""", unsafe_allow_html=True)
+
+# Hero header
+st.markdown("""
+<div style="
+    padding: 18px 20px;
+    border-radius: 16px;
+    background: radial-gradient(circle at top left, rgba(56,189,248,0.12), transparent 55%),
+                radial-gradient(circle at bottom right, rgba(34,211,238,0.10), transparent 55%),
+                #020617;
+    border: 1px solid #1F2937;
+    box-shadow: 0 0 24px rgba(15,118,110,0.45);
+    margin-bottom: 18px;
+">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap;">
+        <div>
+            <h1 style="color:#E5E7EB; margin-bottom:4px; font-size:26px;">⚡ Logs Heap AI Analyzer</h1>
+            <p style="color:#9CA3AF; margin:0;">
+                AI‑powered JVM GC & Application Log Correlation • Observability • Root‑Cause Intelligence
+            </p>
+        </div>
+        <div style="text-align:right; min-width:220px;">
+            <div style="color:#67E8F9; font-size:12px; text-transform:uppercase; letter-spacing:0.08em;">
+                Active Session
+            </div>
+            <div style="color:#E5E7EB; font-size:13px;">
+                {ts}
+            </div>
+        </div>
+    </div>
+</div>
+""".format(ts=datetime.now().strftime("%Y-%m-%d %H:%M:%S")), unsafe_allow_html=True)
 
 for key in ["gc_df", "app_df", "correlations", "insight", "ai_mode"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
 with st.sidebar:
-    st.header("⚙️ Settings")
+    st.header("⚙️ Control Panel")
 
     model_names = [
         "gpt-oss:120b-cloud",
@@ -742,12 +868,12 @@ with st.sidebar:
     spike_factor = st.slider("GC Spike Threshold (x mean)", 1.0, 3.0, 1.5)
 
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "Upload Logs",
-    "Parsed Data",
-    "Correlation",
-    "AI Insight",
-    "Visualizations",
-    "Downloads",
+    "📥 Upload Logs",
+    "📄 Parsed Data",
+    "🔗 Correlation",
+    "🧠 AI Insight",
+    "📊 Visualizations",
+    "📦 Downloads",
 ])
 
 # ---------- Tab 1: Upload ----------
@@ -759,7 +885,7 @@ with tab1:
     app_file = st.file_uploader("Application Log", type=["log", "txt"], key="app_log")
 
     if gc_file or app_file:
-        with st.spinner("Parsing logs..."):
+        with st.spinner("Parsing logs with JVM-aware parsers..."):
             gc_df = parse_gc_log(gc_file) if gc_file else None
             app_df = parse_app_log(app_file) if app_file else None
 
@@ -772,16 +898,18 @@ with tab1:
         st.success(f"Parsed GC events: {len(gc_df) if gc_df is not None else 0}, "
                    f"App entries: {len(app_df) if app_df is not None else 0}")
 
+        st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
+
         col1, col2 = st.columns(2)
         with col1:
             if gc_df is not None and not gc_df.empty:
-                st.markdown("**Sample GC rows**")
+                st.markdown("#### GC Sample")
                 st.dataframe(gc_df.head(10), use_container_width=True)
             else:
                 st.info("No GC log uploaded or parsed.")
         with col2:
             if app_df is not None and not app_df.empty:
-                st.markdown("**Sample App rows**")
+                st.markdown("#### Application Log Sample")
                 st.dataframe(app_df.head(10), use_container_width=True)
             else:
                 st.info("No Application log uploaded or parsed.")
@@ -798,10 +926,42 @@ with tab2:
     app_df = st.session_state.app_df
 
     if (gc_df is None or gc_df.empty) and (app_df is None or app_df.empty):
-        st.info("Upload logs in the first tab to see parsed data.")
+        st.info("Upload logs in the Upload tab to see parsed data.")
     else:
+        # Stat tiles
+        total_gc = len(gc_df) if gc_df is not None else 0
+        total_app = len(app_df) if app_df is not None else 0
+
+        st.markdown("""
+<div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px;">
+    <div style="
+        flex:1; min-width:180px;
+        padding:14px 16px;
+        background:#020617;
+        border-radius:12px;
+        border:1px solid #1F2937;
+        box-shadow:0 0 16px rgba(34,211,238,0.12);
+    ">
+        <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#9CA3AF;">GC Events</div>
+        <div style="font-size:24px; color:#E5E7EB; font-weight:600;">{gc}</div>
+    </div>
+    <div style="
+        flex:1; min-width:180px;
+        padding:14px 16px;
+        background:#020617;
+        border-radius:12px;
+        border:1px solid #1F2937;
+        box-shadow:0 0 16px rgba(34,211,238,0.12);
+    ">
+        <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#9CA3AF;">App Log Entries</div>
+        <div style="font-size:24px; color:#E5E7EB; font-weight:600;">{app}</div>
+    </div>
+</div>
+""".format(gc=total_gc, app=total_app), unsafe_allow_html=True)
+
         st.markdown("### 🔍 Quick Highlights")
 
+        # Top 10 layout
         if gc_df is not None and not gc_df.empty and app_df is not None and not app_df.empty:
             col_top_gc, col_top_err, col_top_warn = st.columns(3)
         elif gc_df is not None and not gc_df.empty:
@@ -831,7 +991,7 @@ with tab2:
                 top_warns = app_df[app_df["level"] == "WARN"].head(10)
                 st.dataframe(top_warns[["timestamp", "level", "message", "category"]], use_container_width=True, height=260)
 
-        st.markdown("---")
+        st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
 
         gc_col, app_col = st.columns(2)
         with gc_col:
@@ -864,7 +1024,7 @@ with tab3:
     if gc_df is None or gc_df.empty or app_df is None or app_df.empty:
         st.info("Correlation requires both GC and Application logs.")
     else:
-        with st.spinner("Computing correlations..."):
+        with st.spinner("Analyzing temporal relationships between GC and App events..."):
             correlations = correlate(gc_df, app_df, window_size, spike_factor)
 
         st.session_state.correlations = correlations
@@ -891,7 +1051,7 @@ with tab3:
                 height=300,
             )
 
-            st.markdown("---")
+            st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
 
             st.markdown("### ⏱ Top 10 by Time Difference (ms)")
 
@@ -912,17 +1072,17 @@ with tab3:
                 height=300,
             )
 
-            st.markdown("---")
+            st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
 
             st.markdown("### 📊 Correlation Severity Distribution")
             st.bar_chart(correlations["correlation_severity"].value_counts())
 
-            st.markdown("---")
+            st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
 
             st.markdown("### 📄 Full Correlation Table")
             st.dataframe(correlations, use_container_width=True, height=400)
 
-            st.markdown("---")
+            st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
 
             st.markdown("### 🧩 Grouped View (GC Event → App Events)")
             grouped = build_grouped_correlations(correlations)
@@ -972,15 +1132,15 @@ with tab4:
             st.info("Please ensure at least one parsed dataset is available.")
         else:
             if st.session_state.insight is None:
-                progress = st.progress(0, text="Preparing AI analysis...")
+                progress = st.progress(0, text="Initializing AI insight pipeline...")
 
                 progress.progress(25, text="Converting data to JSON-safe format...")
-                _ = data_for_ai.to_dict(orient="records") if isinstance(data_for_ai, pd.DataFrame) else convert(data_for_ai)
+                _ = convert(data_for_ai.to_dict(orient="records")) if isinstance(data_for_ai, pd.DataFrame) else convert(data_for_ai)
 
                 progress.progress(50, text=f"Building prompt for model: {selected_model}...")
                 progress.progress(75, text="Sending request to AI model...")
 
-                with st.spinner("AI is analyzing JVM behavior and application impact..."):
+                with st.spinner("🤖 AI engine analyzing patterns, correlations, and anomalies..."):
                     insight = generate_ai_insight(data_for_ai, selected_model, mode)
 
                 progress.progress(100, text="AI analysis complete!")
@@ -988,32 +1148,81 @@ with tab4:
             else:
                 insight = st.session_state.insight
 
-            st.markdown("### 🧠 Key Findings")
+            # AI cards
+            st.markdown("""
+<div style="display:flex; flex-wrap:wrap; gap:16px; margin-bottom:16px;">
+  <div style="flex:1; min-width:260px; padding:14px 16px; border-radius:12px;
+              background:rgba(8,47,73,0.8); border:1px solid rgba(34,211,238,0.4);">
+    <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#7DD3FC;">Mode</div>
+    <div style="font-size:18px; color:#E5E7EB; font-weight:600;">{mode}</div>
+  </div>
+  <div style="flex:2; min-width:260px; padding:14px 16px; border-radius:12px;
+              background:rgba(8,47,73,0.8); border:1px solid rgba(34,211,238,0.4);">
+    <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#7DD3FC;">Root Cause</div>
+    <div style="font-size:16px; color:#E5E7EB;">{rc}</div>
+  </div>
+  <div style="flex:1; min-width:260px; padding:14px 16px; border-radius:12px;
+              background:rgba(8,47,73,0.8); border:1px solid rgba(34,211,238,0.4);">
+    <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#7DD3FC;">Confidence</div>
+    <div style="font-size:18px; color:#E5E7EB; font-weight:600;">{conf}</div>
+  </div>
+</div>
+""".format(
+    mode=mode,
+    rc=insight.get('root_cause', ''),
+    conf=insight.get('confidence', '')
+), unsafe_allow_html=True)
 
-            st.write(f"**Mode:** {mode}")
-            st.write(f"**Root cause:** {insight.get('root_cause', '')}")
-            st.write(f"**Impact:** {insight.get('impact', '')}")
-            st.write(f"**Confidence:** {insight.get('confidence', '')}")
+            st.markdown("#### Impact")
+            st.markdown(f"> {insight.get('impact', '')}")
+
             st.write(f"**Confidence explanation:** {insight.get('confidence_explanation', '')}")
+
+            # Confidence explanation card
+            st.markdown("""
+<div style="
+    margin-top:12px;
+    padding:14px 16px;
+    background:rgba(14,165,233,0.08);
+    border-left:4px solid #38BDF8;
+    border-radius:8px;
+">
+    <strong style="color:#38BDF8;">What does the Confidence Score mean?</strong>
+    <p style="color:#E2E8F0; margin-top:6px;">
+        The confidence score reflects how strongly the AI believes the identified
+        root cause and recommendations match the patterns found in your logs.
+        Higher confidence usually indicates:
+        <ul style="margin-top:4px;">
+            <li>Clear, repeated evidence in GC or App logs</li>
+            <li>Strong correlation between GC pauses and application issues</li>
+            <li>Consistent patterns across timestamps, severity, and categories</li>
+        </ul>
+        Lower confidence typically means the data is noisy, inconsistent, or
+        insufficient for a strong conclusion.
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+            st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
 
             col_e, col_r, col_n = st.columns(3)
 
             with col_e:
-                st.markdown("**Top Evidence (up to 10)**")
+                st.markdown("### Evidence")
                 for e in insight.get("evidence", [])[:10]:
                     st.markdown(f"- {e}")
 
             with col_r:
-                st.markdown("**Recommendations**")
+                st.markdown("### Recommendations")
                 for r in insight.get("recommendations", [])[:10]:
                     st.markdown(f"- {r}")
 
             with col_n:
-                st.markdown("**Next steps**")
+                st.markdown("### Next steps")
                 for s in insight.get("next_steps", [])[:10]:
                     st.markdown(f"- {s}")
 
-            st.markdown("---")
+            st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
             st.markdown("### Raw Insight JSON")
             st.json(insight)
 
@@ -1030,7 +1239,7 @@ with tab5:
     if (gc_df is None or gc_df.empty) and (app_df is None or app_df.empty):
         st.info("Upload and parse logs first.")
     else:
-        st.markdown("### 📊 Quick Stats")
+        st.markdown("### 📊 Session Metrics")
 
         col_s1, col_s2, col_s3 = st.columns(3)
         with col_s1:
@@ -1040,7 +1249,7 @@ with tab5:
         with col_s3:
             st.metric("Correlated Events", len(correlations) if correlations is not None else 0)
 
-        st.markdown("---")
+        st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
 
         if gc_df is not None and not gc_df.empty:
             gc_fig = plot_gc_timeline(gc_df)
@@ -1078,14 +1287,14 @@ with tab6:
         html_report = build_html_report(gc_df, app_df, correlations, insight, mode)
 
         st.download_button(
-            label="Download Full Session Report (ZIP)",
+            label="📦 Download Full Session Report (ZIP)",
             data=full_zip,
             file_name=f"jvm_session_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
             mime="application/zip",
         )
 
         st.download_button(
-            label="Download Full Session Report (HTML)",
+            label="🌐 Download Full Session Report (HTML)",
             data=html_report.encode("utf-8"),
             file_name=f"jvm_session_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
             mime="text/html",
