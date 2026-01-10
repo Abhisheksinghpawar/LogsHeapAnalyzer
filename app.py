@@ -34,6 +34,46 @@ def convert(obj):
     return obj
 
 
+# ---------- AI helper context builders ----------
+
+def build_compact_context(gc_df=None, app_df=None, correlations=None, max_rows: int = 200) -> str:
+    parts = []
+
+    if gc_df is not None and isinstance(gc_df, pd.DataFrame) and not gc_df.empty:
+        sample_gc = gc_df.head(max_rows).to_dict(orient="records")
+        parts.append(f"GC_LOG_EVENTS_JSON = {convert(sample_gc)}")
+
+    if app_df is not None and isinstance(app_df, pd.DataFrame) and not app_df.empty:
+        sample_app = app_df.head(max_rows).to_dict(orient="records")
+        parts.append(f"APP_LOG_EVENTS_JSON = {convert(sample_app)}")
+
+    if correlations is not None and isinstance(correlations, pd.DataFrame) and not correlations.empty:
+        sample_corr = correlations.head(max_rows).to_dict(orient="records")
+        parts.append(f"CORRELATIONS_JSON = {convert(sample_corr)}")
+
+    return "\n\n".join(parts) if parts else "No parsed data available."
+
+
+def build_pattern_signals(gc_df=None, app_df=None) -> dict:
+    signals = {}
+
+    if gc_df is not None and isinstance(gc_df, pd.DataFrame) and not gc_df.empty:
+        if "pause_ms" in gc_df.columns:
+            signals["gc_avg_pause_ms"] = float(gc_df["pause_ms"].mean())
+            signals["gc_max_pause_ms"] = float(gc_df["pause_ms"].max())
+        signals["gc_event_count"] = int(len(gc_df))
+        if "heap_after_k" in gc_df.columns:
+            signals["heap_after_k_mean"] = float(gc_df["heap_after_k"].tail(50).mean())
+
+    if app_df is not None and isinstance(app_df, pd.DataFrame) and not app_df.empty:
+        if "level" in app_df.columns:
+            signals["app_error_count"] = int((app_df["level"] == "ERROR").sum())
+            signals["app_warn_count"] = int((app_df["level"] == "WARN").sum())
+        signals["app_event_count"] = int(len(app_df))
+
+    return signals
+
+
 # ---------- GC log parser ----------
 
 def parse_gc_log(file) -> pd.DataFrame:
@@ -42,8 +82,6 @@ def parse_gc_log(file) -> pd.DataFrame:
     records = []
 
     for line in lines:
-        # Example:
-        # 2024-11-18T10:15:32.123+0000: 1.234: [GC (Allocation Failure) 512K->256K(1024K), 0.0056789 secs]
         ts_match = re.match(
             r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[\+\-]\d+)",
             line
@@ -104,8 +142,6 @@ def parse_app_log(file) -> pd.DataFrame:
     records = []
 
     for line in lines:
-        # Example:
-        # 2024-11-18 10:15:31 INFO  Starting request handling for /api/user
         match = re.match(
             r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(INFO|WARN|ERROR)\s+(.*)$",
             line
@@ -270,7 +306,6 @@ def build_grouped_correlations(corr_df: pd.DataFrame):
 # ---------- AI insight generation (with modes) ----------
 
 def generate_ai_insight(data, model: str, mode: str):
-    # Always JSON-safe convert
     if isinstance(data, pd.DataFrame):
         safe = convert(data.to_dict(orient="records"))
     else:
@@ -352,6 +387,168 @@ Data:
         "confidence_explanation": "Fallback because response was not valid JSON.",
         "next_steps": [],
     }
+
+
+# ---------- AI-driven high-level analysis features ----------
+
+def ai_root_cause_analysis(gc_df=None, app_df=None, correlations=None, model: str = "gpt-oss:120b-cloud") -> str:
+    context = build_compact_context(gc_df, app_df, correlations)
+
+    system_prompt = (
+        "You are an expert JVM performance engineer. "
+        "Given GC logs, application logs, and correlations, "
+        "identify the single most likely root cause of performance issues. "
+        "Be concise, structured, and practical."
+    )
+
+    user_prompt = f"""
+Context:
+{context}
+
+Task:
+1. Identify the most likely root cause.
+2. Explain the evidence in 3–5 bullet points.
+3. Suggest 3 concrete actions to try first.
+4. Provide a confidence score between 0 and 100.
+
+Format exactly as:
+
+Root Cause:
+<one sentence>
+
+Evidence:
+- <bullet>
+- <bullet>
+
+Actions:
+1. <action>
+2. <action>
+3. <action>
+
+Confidence: <number>/100
+"""
+
+    response = ollama.chat(
+        model=model,
+        messages=[{"role": "user", "content": system_prompt + "\n\n" + user_prompt}],
+    )
+    return response["message"]["content"].strip()
+
+
+def ai_pattern_detection(gc_df=None, app_df=None, model: str = "gpt-oss:120b-cloud") -> str:
+    context = build_compact_context(gc_df, app_df)
+    signals = build_pattern_signals(gc_df, app_df)
+
+    system_prompt = (
+        "You are a JVM performance expert. "
+        "Given log context and summary metrics, detect meaningful performance patterns."
+    )
+
+    user_prompt = f"""
+Context:
+{context}
+
+Signals:
+{json.dumps(convert(signals), indent=2)}
+
+Task:
+Identify performance patterns.
+
+For each pattern, provide:
+- Name (e.g., "GC Thrashing", "Memory Leak Suspected", "High Error Rate")
+- Severity (Low/Medium/High/Critical)
+- Evidence (1–2 bullets)
+- Impact (short sentence)
+- Recommended next step
+
+Format:
+
+Pattern:
+Name: ...
+Severity: ...
+Evidence:
+- ...
+Impact: ...
+Next Step: ...
+---
+"""
+
+    response = ollama.chat(
+        model=model,
+        messages=[{"role": "user", "content": system_prompt + "\n\n" + user_prompt}],
+    )
+    return response["message"]["content"].strip()
+
+
+def ai_timeline_narration(gc_df=None, app_df=None, correlations=None, model: str = "gpt-oss:120b-cloud") -> str:
+    context = build_compact_context(gc_df, app_df, correlations)
+
+    system_prompt = (
+        "You are narrating JVM and application behavior over time. "
+        "Create a concise chronological story of key events."
+    )
+
+    user_prompt = f"""
+Context:
+{context}
+
+Task:
+1. Describe the key timeline in 5–10 chronological points.
+2. Focus on spikes, anomalies, and interactions between GC and application behavior.
+3. Use timestamps or relative phrases ("around 14:32") when possible.
+4. End with 2–3 bullets summarizing what really happened.
+
+Format:
+
+Timeline:
+1. ...
+2. ...
+...
+
+Summary:
+- ...
+- ...
+"""
+
+    response = ollama.chat(
+        model=model,
+        messages=[{"role": "user", "content": system_prompt + "\n\n" + user_prompt}],
+    )
+    return response["message"]["content"].strip()
+
+
+def ai_log_summaries(gc_df=None, app_df=None, model: str = "gpt-oss:120b-cloud") -> str:
+    context = build_compact_context(gc_df, app_df)
+
+    system_prompt = (
+        "You summarize JVM GC and application logs for performance engineers. "
+        "Be sharp, structured, and avoid fluff."
+    )
+
+    user_prompt = f"""
+Context:
+{context}
+
+Task:
+Provide three sections:
+
+GC Summary:
+- ...
+
+Application Summary:
+- ...
+
+Combined Behavior:
+- ...
+
+Each section: 3–5 bullets, focusing on performance, stability, and anomalies.
+"""
+
+    response = ollama.chat(
+        model=model,
+        messages=[{"role": "user", "content": system_prompt + "\n\n" + user_prompt}],
+    )
+    return response["message"]["content"].strip()
 
 
 # ---------- Text report ----------
@@ -737,7 +934,39 @@ def plot_gc_pause_heatmap(gc_df: pd.DataFrame):
 
 st.set_page_config(page_title="Logs Heap AI Analyzer", layout="wide")
 
-# Global CSS for techy AI look + neater tabs
+st.markdown("""
+<style>
+.main .block-container {
+    max-width: 95% !important;
+    padding-left: 2rem !important;
+    padding-right: 2rem !important;
+}
+
+.ai-section {
+    width: 100%;
+    padding: 20px 24px;
+    background: rgba(15,23,42,0.75);
+    border-radius: 12px;
+    border: 1px solid rgba(148,163,184,0.35);
+    backdrop-filter: blur(6px);
+    margin-top: 18px;
+}
+
+.ai-section p, .ai-section li {
+    font-size: 1.05rem;
+    line-height: 1.55rem;
+}
+
+.ai-section {
+    animation: fadeIn 0.35s ease-in-out;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.markdown("""
 <style>
 body {
@@ -786,7 +1015,6 @@ hr.ai-divider {
 </style>
 """, unsafe_allow_html=True)
 
-# Floating AI badge
 st.markdown("""
 <div style="
     position:fixed;
@@ -806,7 +1034,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Hero header
 st.markdown("""
 <div style="
     padding: 18px 20px;
@@ -867,21 +1094,13 @@ with st.sidebar:
     window_size = st.slider("Correlation Window (seconds)", 1, 30, 5)
     spike_factor = st.slider("GC Spike Threshold (x mean)", 1.0, 3.0, 1.5)
 
-    # --- Hard Reset Button (no confirmation) ---
     if st.button("🔄 Reset Session"):
-        # Clear parsed data
         for key in ["gc_df", "app_df", "correlations", "insight", "ai_mode"]:
             st.session_state[key] = None
 
-        # Clear file uploader widget state safely
-        if "gc_log" in st.session_state:
-            del st.session_state["gc_log"]
-        if "app_log" in st.session_state:
-            del st.session_state["app_log"]
-
-        # Immediately rerun the app
+        st.session_state.reset_counter = st.session_state.get("reset_counter", 0) + 1
         st.rerun()
-    
+
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📥 Upload Logs",
     "📄 Parsed Data",
@@ -895,9 +1114,68 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 
 with tab1:
     st.subheader("Upload GC and Application Logs")
+    st.markdown("""
+    <style>
+    .upload-card {
+        padding: 18px;
+        border-radius: 12px;
+        background: #0F172A;
+        border: 1px solid #1E293B;
+        box-shadow: 0 0 12px rgba(56,189,248,0.15);
+        transition: 0.2s ease;
+        margin-bottom: 12px;
+    }
+    .upload-card:hover {
+        border-color: #38BDF8;
+        box-shadow: 0 0 18px rgba(56,189,248,0.35);
+    }
+    .upload-title {
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 6px;
+    }
+    .upload-desc {
+        font-size: 13px;
+        color: #94A3B8;
+        margin-bottom: 12px;
+    }
+    .gc-title { color: #38BDF8; }
+    .app-title { color: #38BDF8; }
+    </style>
 
-    gc_file = st.file_uploader("GC Log", type=["log", "txt"], key="gc_log")
-    app_file = st.file_uploader("Application Log", type=["log", "txt"], key="app_log")
+    """, unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("""
+        <div class="upload-card">
+            <div class="upload-title gc-title">📘 GC Log</div>
+            <div class="upload-desc">Upload your JVM Garbage Collection log (.log or .txt)</div>
+        """, unsafe_allow_html=True)
+
+        gc_file = st.file_uploader(
+            label="",
+            type=["log", "txt"],
+            key=f"gc_log_{st.session_state.get('reset_counter', 0)}"
+        )
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with col2:
+        st.markdown("""
+        <div class="upload-card">
+            <div class="upload-title app-title">📘 Application Log</div>
+            <div class="upload-desc">Upload your application runtime log (.log or .txt)</div>
+        """, unsafe_allow_html=True)
+
+        app_file = st.file_uploader(
+            label="",
+            type=["log", "txt"],
+            key=f"app_log_{st.session_state.get('reset_counter', 0)}"
+        )
+
+        st.markdown("</div>", unsafe_allow_html=True)
 
     if gc_file or app_file:
         with st.spinner("Parsing logs with JVM-aware parsers..."):
@@ -943,7 +1221,6 @@ with tab2:
     if (gc_df is None or gc_df.empty) and (app_df is None or app_df.empty):
         st.info("Upload logs in the Upload tab to see parsed data.")
     else:
-        # Stat tiles
         total_gc = len(gc_df) if gc_df is not None else 0
         total_app = len(app_df) if app_df is not None else 0
 
@@ -976,7 +1253,6 @@ with tab2:
 
         st.markdown("### 🔍 Quick Highlights")
 
-        # Top 10 layout
         if gc_df is not None and not gc_df.empty and app_df is not None and not app_df.empty:
             col_top_gc, col_top_err, col_top_warn = st.columns(3)
         elif gc_df is not None and not gc_df.empty:
@@ -1057,7 +1333,7 @@ with tab3:
     </p>
 </div>
 """, unsafe_allow_html=True)
-    
+
     gc_df = st.session_state.gc_df
     app_df = st.session_state.app_df
 
@@ -1139,6 +1415,27 @@ with tab3:
                     st.write("Correlated App Events:")
                     st.table(pd.DataFrame(group["app_events"]))
 
+            st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
+            st.subheader("🧵 AI Timeline Narration (from Correlations)")
+
+            if st.button("Generate Timeline Based on Current Correlations"):
+                with st.spinner("Generating AI narration of correlated events over time..."):
+                    timeline_text = ai_timeline_narration(
+                        gc_df=gc_df,
+                        app_df=app_df,
+                        correlations=correlations,
+                        model=selected_model,
+                    )
+                st.markdown(
+                    f"""
+<div style="margin-top:10px; padding:14px 16px; border-radius:12px;
+            background:rgba(34,197,235,0.08); border:1px solid rgba(56,189,248,0.9);">
+<pre style="white-space:pre-wrap; font-family:var(--font-mono); font-size:13px; color:#E5E7EB;">{timeline_text}</pre>
+</div>
+""",
+                    unsafe_allow_html=True,
+                )
+
 
 # ---------- Tab 4: AI Insight ----------
 
@@ -1149,9 +1446,69 @@ with tab4:
     app_df = st.session_state.app_df
     correlations = st.session_state.correlations
 
+    st.markdown("""
+<div style="
+    margin-top:4px;
+    margin-bottom:16px;
+    padding:14px 16px;
+    background:rgba(15,23,42,0.95);
+    border-radius:12px;
+    border:1px solid rgba(148,163,184,0.5);
+">
+  <div style="font-size:13px; color:#E5E7EB; margin-bottom:6px;">
+    <strong style="color:#38BDF8;">AI-Driven Analysis Layer</strong><br/>
+    Use these focused AI tools to get a narrative, patterns, summaries, and a single best-guess root cause.
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
     if (gc_df is None or gc_df.empty) and (app_df is None or app_df.empty):
         st.info("Upload at least one log (GC or Application) to generate AI insight.")
     else:
+        # --- Improved 4-button horizontal layout ---
+        st.markdown("""
+    <style>
+    .ai-btn {
+        background: #0F172A;
+        border: 1px solid #1E293B;
+        color: #E5E7EB;
+        padding: 10px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: 0.15s ease-in-out;
+    }
+    .ai-btn:hover {
+        background: #1E293B;
+        border-color: #38BDF8;
+        color: #F0F9FF;
+        box-shadow: 0 0 10px rgba(56,189,248,0.4);
+    }
+    .ai-btn:active {
+        background: linear-gradient(90deg, #0EA5E9, #38BDF8);
+        color: #0F172A;
+        border-color: #38BDF8;
+        box-shadow: 0 0 14px rgba(56,189,248,0.6);
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # 4 buttons in one row
+    colA, colB, colC, colD = st.columns(4)
+
+    with colA:
+        rca_clicked = st.button("🔎 Root Cause", key="btn_rca", help="AI Root-Cause Analyzer", use_container_width=True)
+
+    with colB:
+        patterns_clicked = st.button("🧩 Patterns", key="btn_patterns", help="AI Pattern Detector", use_container_width=True)
+
+    with colC:
+        timeline_clicked = st.button("🧵 Timeline", key="btn_timeline", help="AI Timeline Narration", use_container_width=True)
+
+    with colD:
+        summary_clicked = st.button("🧾 Summaries", key="btn_summary", help="AI Log Summaries", use_container_width=True)
+
         if gc_df is not None and not gc_df.empty and app_df is not None and not app_df.empty and correlations is not None and not correlations.empty:
             data_for_ai = correlations
             mode = "full"
@@ -1188,84 +1545,105 @@ with tab4:
             else:
                 insight = st.session_state.insight
 
-            # AI cards
             st.markdown("""
-<div style="display:flex; flex-wrap:wrap; gap:16px; margin-bottom:16px;">
-  <div style="flex:1; min-width:260px; padding:14px 16px; border-radius:12px;
-              background:rgba(8,47,73,0.8); border:1px solid rgba(34,211,238,0.4);">
-    <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#7DD3FC;">Mode</div>
-    <div style="font-size:18px; color:#E5E7EB; font-weight:600;">{mode}</div>
-  </div>
-  <div style="flex:2; min-width:260px; padding:14px 16px; border-radius:12px;
-              background:rgba(8,47,73,0.8); border:1px solid rgba(34,211,238,0.4);">
-    <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#7DD3FC;">Root Cause</div>
-    <div style="font-size:16px; color:#E5E7EB;">{rc}</div>
-  </div>
-  <div style="flex:1; min-width:260px; padding:14px 16px; border-radius:12px;
-              background:rgba(8,47,73,0.8); border:1px solid rgba(34,211,238,0.4);">
-    <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#7DD3FC;">Confidence</div>
-    <div style="font-size:18px; color:#E5E7EB; font-weight:600;">{conf}</div>
-  </div>
-</div>
-""".format(
-    mode=mode,
-    rc=insight.get('root_cause', ''),
-    conf=insight.get('confidence', '')
-), unsafe_allow_html=True)
+            <div style="display:flex; flex-wrap:wrap; gap:16px; margin-bottom:16px;">
+            <div style="flex:1; min-width:260px; padding:14px 16px; border-radius:12px;
+                        background:rgba(8,47,73,0.8); border:1px solid rgba(34,211,238,0.4);">
+                <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#7DD3FC;">Mode</div>
+                <div style="font-size:18px; color:#E5E7EB; font-weight:600;">{mode}</div>
+            </div>
+            <div style="flex:2; min-width:260px; padding:14px 16px; border-radius:12px;
+                        background:rgba(8,47,73,0.8); border:1px solid rgba(34,211,238,0.4);">
+                <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#7DD3FC;">Root Cause</div>
+                <div style="font-size:16px; color:#E5E7EB;">{rc}</div>
+            </div>
+            <div style="flex:1; min-width:260px; padding:14px 16px; border-radius:12px;
+                        background:rgba(8,47,73,0.8); border:1px solid rgba(34,211,238,0.4);">
+                <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#7DD3FC;">Confidence</div>
+                <div style="font-size:18px; color:#E5E7EB; font-weight:600;">{conf}</div>
+            </div>
+            </div>
+            """.format(
+                mode=mode,
+                rc=insight.get('root_cause', ''),
+                conf=insight.get('confidence', '')
+            ), unsafe_allow_html=True)
 
-            st.markdown("#### Impact")
-            st.markdown(f"> {insight.get('impact', '')}")
+            st.markdown(f"""
+            <div class="ai-section">
+                <h4 style="color:#38BDF8;">Impact</h4>
+                <p>{insight.get('impact', '')}</p>
+            </div>
+            """, unsafe_allow_html=True)
 
             st.write(f"**Confidence explanation:** {insight.get('confidence_explanation', '')}")
 
-            # Confidence explanation card
             st.markdown("""
-<div style="
-    margin-top:12px;
-    padding:14px 16px;
-    background:rgba(14,165,233,0.08);
-    border-left:4px solid #38BDF8;
-    border-radius:8px;
-">
-    <strong style="color:#38BDF8;">What does the Confidence Score mean?</strong>
-    <p style="color:#E2E8F0; margin-top:6px;">
-        The confidence score reflects how strongly the AI believes the identified
-        root cause and recommendations match the patterns found in your logs.
-        Higher confidence usually indicates:
-        <ul style="margin-top:4px;">
-            <li>Clear, repeated evidence in GC or App logs</li>
-            <li>Strong correlation between GC pauses and application issues</li>
-            <li>Consistent patterns across timestamps, severity, and categories</li>
-        </ul>
-        Lower confidence typically means the data is noisy, inconsistent, or
-        insufficient for a strong conclusion.
-    </p>
-</div>
-""", unsafe_allow_html=True)
+            <div style="
+                margin-top:12px;
+                padding:14px 16px;
+                background:rgba(14,165,233,0.08);
+                border-left:4px solid #38BDF8;
+                border-radius:8px;
+            ">
+                <strong style="color:#38BDF8;">What does the Confidence Score mean?</strong>
+                <p style="color:#E2E8F0; margin-top:6px;">
+                    The confidence score reflects how strongly the AI believes the identified
+                    root cause and recommendations match the patterns found in your logs.
+                    Higher confidence usually indicates:
+                    <ul style="margin-top:4px;">
+                        <li>Clear, repeated evidence in GC or App logs</li>
+                        <li>Strong correlation between GC pauses and application issues</li>
+                        <li>Consistent patterns across timestamps, severity, and categories</li>
+                    </ul>
+                    Lower confidence typically means the data is noisy, inconsistent, or
+                    insufficient for a strong conclusion.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
 
             st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
 
-            col_e, col_r, col_n = st.columns(3)
+            st.markdown('<div class="ai-section">', unsafe_allow_html=True)
+            st.markdown("""
+            <div class="ai-section" style="display: flex; gap: 24px;">
+            <div style="flex: 1;">
+                <h4 style="color:#38BDF8;">Evidence</h4>
+                <ul style="padding-left: 1rem;">
+            """, unsafe_allow_html=True)
 
-            with col_e:
-                st.markdown("### Evidence")
-                for e in insight.get("evidence", [])[:10]:
-                    st.markdown(f"- {e}")
+            for e in insight.get("evidence", [])[:10]:
+                st.markdown(f"<li>{e}</li>", unsafe_allow_html=True)
 
-            with col_r:
-                st.markdown("### Recommendations")
-                for r in insight.get("recommendations", [])[:10]:
-                    st.markdown(f"- {r}")
+            st.markdown("""
+                </ul>
+            </div>
+            <div style="flex: 1;">
+                <h4 style="color:#38BDF8;">Recommendations</h4>
+                <ul style="padding-left: 1rem;">
+            """, unsafe_allow_html=True)
 
-            with col_n:
-                st.markdown("### Next steps")
-                for s in insight.get("next_steps", [])[:10]:
-                    st.markdown(f"- {s}")
+            for r in insight.get("recommendations", [])[:10]:
+                st.markdown(f"<li>{r}</li>", unsafe_allow_html=True)
 
-            st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
-            st.markdown("### Raw Insight JSON")
-            st.json(insight)
+            st.markdown("""
+                </ul>
+            </div>
+            <div style="flex: 1;">
+                <h4 style="color:#38BDF8;">Next Steps</h4>
+                <ul style="padding-left: 1rem;">
+            """, unsafe_allow_html=True)
 
+            for s in insight.get("next_steps", [])[:10]:
+                st.markdown(f"<li>{s}</li>", unsafe_allow_html=True)
+
+            st.markdown("""
+                </ul>
+            </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            
 
 # ---------- Tab 5: Visualizations ----------
 
