@@ -1400,22 +1400,6 @@ with tab3:
 
             st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
 
-            st.markdown("### 🧩 Grouped View (GC Event → App Events)")
-            grouped = build_grouped_correlations(correlations)
-            for group in grouped:
-                with st.expander(
-                    f"{group['gc_timestamp']} | {group['gc_event']} "
-                    f"({group['gc_pause_ms']} ms, severity={group['severity_max']})"
-                ):
-                    st.write("Heap:", {
-                        "before_k": group["heap_before_k"],
-                        "after_k": group["heap_after_k"],
-                        "total_k": group["heap_total_k"],
-                    })
-                    st.write("Correlated App Events:")
-                    st.table(pd.DataFrame(group["app_events"]))
-
-            st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
             st.subheader("🧵 AI Timeline Narration (from Correlations)")
 
             if st.button("Generate Timeline Based on Current Correlations"):
@@ -1436,6 +1420,22 @@ with tab3:
                     unsafe_allow_html=True,
                 )
 
+            st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
+
+            st.markdown("### 🧩 Grouped View (GC Event → App Events)")
+            grouped = build_grouped_correlations(correlations)
+            for group in grouped:
+                with st.expander(
+                    f"{group['gc_timestamp']} | {group['gc_event']} "
+                    f"({group['gc_pause_ms']} ms, severity={group['severity_max']})"
+                ):
+                    st.write("Heap:", {
+                        "before_k": group["heap_before_k"],
+                        "after_k": group["heap_after_k"],
+                        "total_k": group["heap_total_k"],
+                    })
+                    st.write("Correlated App Events:")
+                    st.table(pd.DataFrame(group["app_events"]))
 
 # ---------- Tab 4: AI Insight ----------
 
