@@ -1091,6 +1091,7 @@ with st.sidebar:
         st.session_state.last_model = selected_model
 
     st.markdown("---")
+    
     window_size = st.slider("Correlation Window (seconds)", 1, 30, 5)
     spike_factor = st.slider("GC Spike Threshold (x mean)", 1.0, 3.0, 1.5)
 
@@ -1338,6 +1339,7 @@ with tab3:
     app_df = st.session_state.app_df
 
     if gc_df is None or gc_df.empty or app_df is None or app_df.empty:
+        st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
         st.info("Correlation requires both GC and Application logs.")
     else:
         with st.spinner("Analyzing temporal relationships between GC and App events..."):
@@ -1509,139 +1511,138 @@ with tab4:
     with colD:
         summary_clicked = st.button("🧾 Summaries", key="btn_summary", help="AI Log Summaries", use_container_width=True)
 
-        if gc_df is not None and not gc_df.empty and app_df is not None and not app_df.empty and correlations is not None and not correlations.empty:
-            data_for_ai = correlations
-            mode = "full"
-        elif gc_df is not None and not gc_df.empty:
-            data_for_ai = gc_df
-            mode = "gc_only"
-        elif app_df is not None and not app_df.empty:
-            data_for_ai = app_df
-            mode = "app_only"
+    if gc_df is not None and not gc_df.empty and app_df is not None and not app_df.empty and correlations is not None and not correlations.empty:
+        data_for_ai = correlations
+        mode = "full"
+    elif gc_df is not None and not gc_df.empty:
+        data_for_ai = gc_df
+        mode = "gc_only"
+    elif app_df is not None and not app_df.empty:
+        data_for_ai = app_df
+        mode = "app_only"
+    else:
+        st.info("No usable data found for AI insight.")
+        data_for_ai = None
+        mode = None
+
+    st.session_state.ai_mode = mode
+
+    if data_for_ai is None or mode is None:
+        st.info("Please ensure at least one parsed dataset is available.")
+    else:
+        if st.session_state.insight is None:
+            progress = st.progress(0, text="Initializing AI insight pipeline...")
+
+            progress.progress(25, text="Converting data to JSON-safe format...")
+            _ = convert(data_for_ai.to_dict(orient="records")) if isinstance(data_for_ai, pd.DataFrame) else convert(data_for_ai)
+
+            progress.progress(50, text=f"Building prompt for model: {selected_model}...")
+            progress.progress(75, text="Sending request to AI model...")
+
+            with st.spinner("🤖 AI engine analyzing patterns, correlations, and anomalies..."):
+                insight = generate_ai_insight(data_for_ai, selected_model, mode)
+
+            progress.progress(100, text="AI analysis complete!")
+            st.session_state.insight = insight
         else:
-            st.info("No usable data found for AI insight.")
-            data_for_ai = None
-            mode = None
+            insight = st.session_state.insight
 
-        st.session_state.ai_mode = mode
+        st.markdown("""
+        <div style="display:flex; flex-wrap:wrap; gap:16px; margin-bottom:16px;">
+        <div style="flex:1; min-width:260px; padding:14px 16px; border-radius:12px;
+                    background:rgba(8,47,73,0.8); border:1px solid rgba(34,211,238,0.4);">
+            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#7DD3FC;">Mode</div>
+            <div style="font-size:18px; color:#E5E7EB; font-weight:600;">{mode}</div>
+        </div>
+        <div style="flex:2; min-width:260px; padding:14px 16px; border-radius:12px;
+                    background:rgba(8,47,73,0.8); border:1px solid rgba(34,211,238,0.4);">
+            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#7DD3FC;">Root Cause</div>
+            <div style="font-size:16px; color:#E5E7EB;">{rc}</div>
+        </div>
+        <div style="flex:1; min-width:260px; padding:14px 16px; border-radius:12px;
+                    background:rgba(8,47,73,0.8); border:1px solid rgba(34,211,238,0.4);">
+            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#7DD3FC;">Confidence</div>
+            <div style="font-size:18px; color:#E5E7EB; font-weight:600;">{conf}</div>
+        </div>
+        </div>
+        """.format(
+            mode=mode,
+            rc=insight.get('root_cause', ''),
+            conf=insight.get('confidence', '')
+        ), unsafe_allow_html=True)
 
-        if data_for_ai is None or mode is None:
-            st.info("Please ensure at least one parsed dataset is available.")
-        else:
-            if st.session_state.insight is None:
-                progress = st.progress(0, text="Initializing AI insight pipeline...")
+        st.markdown(f"""
+        <div class="ai-section">
+            <h4 style="color:#38BDF8;">Impact</h4>
+            <p>{insight.get('impact', '')}</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-                progress.progress(25, text="Converting data to JSON-safe format...")
-                _ = convert(data_for_ai.to_dict(orient="records")) if isinstance(data_for_ai, pd.DataFrame) else convert(data_for_ai)
+        st.write(f"**Confidence explanation:** {insight.get('confidence_explanation', '')}")
 
-                progress.progress(50, text=f"Building prompt for model: {selected_model}...")
-                progress.progress(75, text="Sending request to AI model...")
-
-                with st.spinner("🤖 AI engine analyzing patterns, correlations, and anomalies..."):
-                    insight = generate_ai_insight(data_for_ai, selected_model, mode)
-
-                progress.progress(100, text="AI analysis complete!")
-                st.session_state.insight = insight
-            else:
-                insight = st.session_state.insight
-
-            st.markdown("""
-            <div style="display:flex; flex-wrap:wrap; gap:16px; margin-bottom:16px;">
-            <div style="flex:1; min-width:260px; padding:14px 16px; border-radius:12px;
-                        background:rgba(8,47,73,0.8); border:1px solid rgba(34,211,238,0.4);">
-                <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#7DD3FC;">Mode</div>
-                <div style="font-size:18px; color:#E5E7EB; font-weight:600;">{mode}</div>
-            </div>
-            <div style="flex:2; min-width:260px; padding:14px 16px; border-radius:12px;
-                        background:rgba(8,47,73,0.8); border:1px solid rgba(34,211,238,0.4);">
-                <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#7DD3FC;">Root Cause</div>
-                <div style="font-size:16px; color:#E5E7EB;">{rc}</div>
-            </div>
-            <div style="flex:1; min-width:260px; padding:14px 16px; border-radius:12px;
-                        background:rgba(8,47,73,0.8); border:1px solid rgba(34,211,238,0.4);">
-                <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#7DD3FC;">Confidence</div>
-                <div style="font-size:18px; color:#E5E7EB; font-weight:600;">{conf}</div>
-            </div>
-            </div>
-            """.format(
-                mode=mode,
-                rc=insight.get('root_cause', ''),
-                conf=insight.get('confidence', '')
-            ), unsafe_allow_html=True)
-
-            st.markdown(f"""
-            <div class="ai-section">
-                <h4 style="color:#38BDF8;">Impact</h4>
-                <p>{insight.get('impact', '')}</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-            st.write(f"**Confidence explanation:** {insight.get('confidence_explanation', '')}")
-
-            st.markdown("""
-            <div style="
-                margin-top:12px;
-                padding:14px 16px;
-                background:rgba(14,165,233,0.08);
-                border-left:4px solid #38BDF8;
-                border-radius:8px;
-            ">
-                <strong style="color:#38BDF8;">What does the Confidence Score mean?</strong>
-                <p style="color:#E2E8F0; margin-top:6px;">
-                    The confidence score reflects how strongly the AI believes the identified
-                    root cause and recommendations match the patterns found in your logs.
-                    Higher confidence usually indicates:
-                    <ul style="margin-top:4px;">
-                        <li>Clear, repeated evidence in GC or App logs</li>
-                        <li>Strong correlation between GC pauses and application issues</li>
-                        <li>Consistent patterns across timestamps, severity, and categories</li>
-                    </ul>
-                    Lower confidence typically means the data is noisy, inconsistent, or
-                    insufficient for a strong conclusion.
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
-
-            st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
-
-            st.markdown('<div class="ai-section">', unsafe_allow_html=True)
-            st.markdown("""
-            <div class="ai-section" style="display: flex; gap: 24px;">
-            <div style="flex: 1;">
-                <h4 style="color:#38BDF8;">Evidence</h4>
-                <ul style="padding-left: 1rem;">
-            """, unsafe_allow_html=True)
-
-            for e in insight.get("evidence", [])[:10]:
-                st.markdown(f"<li>{e}</li>", unsafe_allow_html=True)
-
-            st.markdown("""
+        st.markdown("""
+        <div style="
+            margin-top:12px;
+            padding:14px 16px;
+            background:rgba(14,165,233,0.08);
+            border-left:4px solid #38BDF8;
+            border-radius:8px;
+        ">
+            <strong style="color:#38BDF8;">What does the Confidence Score mean?</strong>
+            <p style="color:#E2E8F0; margin-top:6px;">
+                The confidence score reflects how strongly the AI believes the identified
+                root cause and recommendations match the patterns found in your logs.
+                Higher confidence usually indicates:
+                <ul style="margin-top:4px;">
+                    <li>Clear, repeated evidence in GC or App logs</li>
+                    <li>Strong correlation between GC pauses and application issues</li>
+                    <li>Consistent patterns across timestamps, severity, and categories</li>
                 </ul>
-            </div>
-            <div style="flex: 1;">
-                <h4 style="color:#38BDF8;">Recommendations</h4>
-                <ul style="padding-left: 1rem;">
-            """, unsafe_allow_html=True)
+                Lower confidence typically means the data is noisy, inconsistent, or
+                insufficient for a strong conclusion.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
 
-            for r in insight.get("recommendations", [])[:10]:
-                st.markdown(f"<li>{r}</li>", unsafe_allow_html=True)
+        st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
 
-            st.markdown("""
-                </ul>
-            </div>
-            <div style="flex: 1;">
-                <h4 style="color:#38BDF8;">Next Steps</h4>
-                <ul style="padding-left: 1rem;">
-            """, unsafe_allow_html=True)
+        st.markdown("""
+        <div class="ai-section" style="display: flex; gap: 24px;">
+        <div style="flex: 1;">
+            <h4 style="color:#38BDF8;">Evidence</h4>
+            <ul style="padding-left: 1rem;">
+        """, unsafe_allow_html=True)
 
-            for s in insight.get("next_steps", [])[:10]:
-                st.markdown(f"<li>{s}</li>", unsafe_allow_html=True)
+        for e in insight.get("evidence", [])[:10]:
+            st.markdown(f"<li>{e}</li>", unsafe_allow_html=True)
 
-            st.markdown("""
-                </ul>
-            </div>
-            </div>
-            """, unsafe_allow_html=True)
+        st.markdown("""
+            </ul>
+        </div>
+        <div style="flex: 1;">
+            <h4 style="color:#38BDF8;">Recommendations</h4>
+            <ul style="padding-left: 1rem;">
+        """, unsafe_allow_html=True)
+
+        for r in insight.get("recommendations", [])[:10]:
+            st.markdown(f"<li>{r}</li>", unsafe_allow_html=True)
+
+        st.markdown("""
+            </ul>
+        </div>
+        <div style="flex: 1;">
+            <h4 style="color:#38BDF8;">Next Steps</h4>
+            <ul style="padding-left: 1rem;">
+        """, unsafe_allow_html=True)
+
+        for s in insight.get("next_steps", [])[:10]:
+            st.markdown(f"<li>{s}</li>", unsafe_allow_html=True)
+
+        st.markdown("""
+            </ul>
+        </div>
+        </div>
+        """, unsafe_allow_html=True)
 
             
 
