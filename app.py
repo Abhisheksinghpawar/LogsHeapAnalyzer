@@ -1578,6 +1578,8 @@ with tab4:
         </div>
         """, unsafe_allow_html=True)
 
+        st.markdown("")
+
         st.write(f"**Confidence explanation:** {insight.get('confidence_explanation', '')}")
 
         st.markdown("""
@@ -1644,10 +1646,7 @@ with tab4:
         </div>
         """, unsafe_allow_html=True)
 
-            
-
 # ---------- Tab 5: Visualizations ----------
-
 with tab5:
     st.subheader("Visualizations")
 
@@ -1658,32 +1657,103 @@ with tab5:
     if (gc_df is None or gc_df.empty) and (app_df is None or app_df.empty):
         st.info("Upload and parse logs first.")
     else:
-        st.markdown("### 📊 Session Metrics")
-
-        col_s1, col_s2, col_s3 = st.columns(3)
-        with col_s1:
-            st.metric("Total GC Events", len(gc_df) if gc_df is not None else 0)
-        with col_s2:
-            st.metric("Total App Logs", len(app_df) if app_df is not None else 0)
-        with col_s3:
-            st.metric("Correlated Events", len(correlations) if correlations is not None else 0)
+        # --- Mini Summary Card ---
+        st.markdown(f"""
+        <div style="
+            width: 100%;
+            padding: 18px 22px;
+            background: rgba(8,47,73,0.85);
+            border: 1px solid rgba(56,189,248,0.35);
+            border-radius: 12px;
+            margin-bottom: 20px;
+        ">
+            <div style="font-size: 20px; font-weight: 700; color:#38BDF8; margin-bottom: 8px;">
+                📊 Session Summary
+            </div>
+            <div style="font-size: 15px; color:#E2E8F0;">
+                <strong>Total GC Events:</strong> {len(gc_df) if gc_df is not None else 0}
+            </div>
+            <div style="font-size: 15px; color:#E2E8F0;">
+                <strong>Total App Logs:</strong> {len(app_df) if app_df is not None else 0}
+            </div>
+            <div style="font-size: 15px; color:#E2E8F0;">
+                <strong>Correlated Events:</strong> {len(correlations) if correlations is not None else 0}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
         st.markdown('<hr class="ai-divider">', unsafe_allow_html=True)
 
+        # --- GC Timeline ---
         if gc_df is not None and not gc_df.empty:
             gc_fig = plot_gc_timeline(gc_df)
             if gc_fig:
+                st.markdown("### 🧵 GC Timeline")
                 st.plotly_chart(gc_fig, use_container_width=True)
 
+        # --- GC Pause Heatmap ---
+        if gc_df is not None and not gc_df.empty:
             heatmap_fig = plot_gc_pause_heatmap(gc_df)
             if heatmap_fig:
+                st.markdown("### 🔥 GC Pause Heatmap")
                 st.plotly_chart(heatmap_fig, use_container_width=True)
 
+        # --- Correlation Timeline ---
         if correlations is not None and not correlations.empty:
             corr_fig = plot_correlation_timeline(correlations)
             if corr_fig:
+                st.markdown("### 🔗 Correlation Timeline")
                 st.plotly_chart(corr_fig, use_container_width=True)
 
+        # --- GC Pause Distribution ---
+        if gc_df is not None and not gc_df.empty:
+            st.markdown("### ⏱️ GC Pause Duration Distribution")
+            fig = px.histogram(
+                gc_df,
+                x="pause_ms",
+                nbins=40,
+                title="GC Pause Duration Histogram",
+                color_discrete_sequence=["#38BDF8"]
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        # --- Heap Usage Over Time ---
+        if gc_df is not None and not gc_df.empty:
+            st.markdown("### 🧠 Heap Usage Over Time")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=gc_df["timestamp"],
+                y=gc_df["heap_before_k"],
+                mode="lines",
+                name="Heap Before GC (KB)",
+                line=dict(color="#FBBF24")
+            ))
+            fig.add_trace(go.Scatter(
+                x=gc_df["timestamp"],
+                y=gc_df["heap_after_k"],
+                mode="lines",
+                name="Heap After GC (KB)",
+                line=dict(color="#34D399")
+            ))
+            fig.update_layout(height=350)
+            st.plotly_chart(fig, use_container_width=True)
+
+        # --- App Log Severity Breakdown ---
+        if app_df is not None and not app_df.empty:
+            st.markdown("### 🚦 Application Log Severity Breakdown")
+            severity_counts = app_df["level"].value_counts()
+            fig = px.pie(
+                values=severity_counts.values,
+                names=severity_counts.index,
+                color=severity_counts.index,
+                color_discrete_map={
+                    "ERROR": "#EF4444",
+                    "WARN": "#F59E0B",
+                    "INFO": "#3B82F6",
+                    "DEBUG": "#10B981"
+                }
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
 # ---------- Tab 6: Downloads ----------
 
