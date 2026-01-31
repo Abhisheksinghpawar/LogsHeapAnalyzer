@@ -84,4 +84,101 @@
 2024-11-18 10:18:41 INFO  Token refresh completed
 2024-11-18 10:18:44 WARN  Memory pressure rising in AuthService
 2024-11-18 10:18:45 ERROR OutOfMemoryError: Java heap space
-2024-11-18 10:18:49 INFO  AuthService restarted successfully
+2024-11-18 10:18:49 INFO  AuthService restarted successfully2024-11-18 10:18:51 INFO  Starting request handling for /api/products
+2024-11-18 10:18:52 WARN  Product service response delayed
+2024-11-18 10:18:54 ERROR Product not found: ProductID=12345
+2024-11-18 10:18:57 INFO  Retrying product fetch
+2024-11-18 10:19:00 WARN  Product fetch retry delayed
+2024-11-18 10:19:03 INFO  Product fetch completed successfully
+2024-11-18 10:19:06 INFO  Starting request handling for /api/cart
+2024-11-18 10:19:07 WARN  Cart service latency detected
+2024-11-18 10:19:09 ERROR Failed to add item to cart: ItemID=98765
+2024-11-18 10:19:12 INFO  Retrying add to cart operation
+2024-11-18 10:19:15 WARN  Add to cart retry delayed
+2024-11-18 10:19:18 INFO  Item successfully added to cart
+2024-11-18 10:19:21 INFO  Starting request handling for /api/payment
+2024-11-18 10:19:22 WARN  Payment gateway response delayed
+2024-11-18 10:19:24 ERROR Payment authorization failed: CardID=54321
+2024-11-18 10:19:27 INFO  Retrying payment authorization
+2024-11-18 10:19:30 WARN  Payment retry delayed
+2024-11-18 10:19:33 INFO  Payment authorized successfully
+2024-11-18 10:19:36 INFO  Starting request handling for /api/shipping
+2024-11-18 10:19:37 WARN  Shipping service response delayed
+2024-11-18 10:19:39 ERROR Failed to fetch shipping rates
+2024-11-18 10:19:42 INFO  Retrying shipping rate fetch
+2024-11-18 10:19:45 WARN  Shipping rate fetch retry delayed
+2024-11-18 10:19:48 INFO  Shipping rates fetched successfully
+2024-11-18 10:19:51 WARN  High memory usage detected in PaymentService
+2024-11-18 10:19:53 ERROR OutOfMemoryError: Java heap space
+2024-11-18 10:19:57 INFO  PaymentService restarted successfully
+2024-11-18 10:20:00 INFO  Starting request handling for /api/reports
+2024-11-18 10:20:02 WARN  Report generation taking longer than expected
+2024-11-18 10:20:05 ERROR Report generation failed: TimeoutException
+2024-11-18 10:20:08 INFO  Retrying report generation
+2024-11-18 10:20:12 WARN  Report generation retry delayed
+2024-11-18 10:20:15 INFO  Report generated successfully
+2024-11-18 10:20:18 WARN  High CPU usage detected in ReportService
+2024-11-18 10:20:20 INFO  CPU usage normalized2024-11-18 10:19:53 ERROR OutOfMemoryError: Java heap space
+2024-11-18 10:19:57 INFO  PaymentService restarted successfully
+2024-11-18 10:20:00 INFO  Starting request handling for /api/reports
+2024-11-18 10:20:02 WARN  Report generation taking longer than expected
+2024-11-18 10:20:05 ERROR Report generation failed: TimeoutException
+2024-11-18 10:20:08 INFO  Retrying report generation
+2024-11-18 10:20:12 WARN  Report generation retry delayed
+2024-11-18 10:20:15 INFO  Report generated successfully
+2024-11-18 10:20:18 WARN  High CPU usage detected in ReportService
+2024-11-18 10:20:20 INFO  CPU usage normalized
+2024-11-18 10:20:23 INFO  Starting request handling for /api/users
+2024-11-18 10:20:25 WARN  User data fetch delayed
+2024-11-18 10:20:28 ERROR Failed to fetch user data: UserID=56789
+2024-11-18 10:20:32 INFO  Retrying user data fetch
+2024-11-18 10:20:36 WARN  User data fetch retry delayed
+2024-11-18 10:20:40 INFO  User data fetched successfully
+2024-11-18 10:20:43 INFO  Starting request handling for /api/orders
+2024-11-18 10:20:45 WARN  Order service response delayed
+2024-11-18 10:20:48 ERROR Order creation failed: OrderID=34567
+2024-11-18 10:20:52 INFO  Retrying order creation
+2024-11-18 10:20:56 WARN  Order creation retry delayed
+2024-11-18 10:21:00 INFO  Order created successfully
+2024-11-18 10:21:03 INFO  Starting request handling for /api/inventory
+2024-11-18 10:21:05 WARN  Inventory update delayed
+2024-11-18 10:21:08 ERROR Inventory update failed: ItemID=12345
+2024-11-18 10:21:12 INFO  Retrying inventory update
+2024-11-18 10:21:16 WARN  Inventory update retry delayed
+2024-11-18 10:21:20 INFO  Inventory updated successfully
+2024-11-18 10:21:23 INFO  Starting request handling for /api/notifications
+2024-11-18 10:21:25 WARN  Notification service response delayed
+2024-11-18 10:21:28 ERROR Failed to send notification: NotificationID=78901
+2024-11-18 10:21:32 INFO  Retrying notification send
+2024-11-18 10:21:36 WARN  Notification send retry delayed
+2024-11-18 10:21:40 INFO  Notification sent successfully
+2024-11-18 10:21:43 INFO  Starting request handling for /api/auth
+2024-11-18 10:21:45 WARN  Authentication service response delayed
+2024-11-18 10:21:48 ERROR Authentication failed: UserID=12345
+2024-11-18 10:21:52 INFO  Retrying authentication
+2024-11-18 10:21:56 WARN  Authentication retry delayed
+2024-11-18 10:22:00 INFO  Authentication successful
+2024-11-18 10:22:03 INFO  Starting request handling for /api/settings
+2024-11-18 10:22:05 WARN  Settings update delayed
+2024-11-18 10:22:08 ERROR Failed to update settings: SettingID=45678
+2024-11-18 10:22:12 INFO  Retrying settings update
+2024-11-18 10:22:16 WARN  Settings update retry delayed
+2024-11-18 10:22:20 INFO  Settings updated successfully
+2024-11-18 10:22:23 INFO  Starting request handling for /api/analytics
+2024-11-18 10:22:25 WARN  Analytics service response delayed
+2024-11-18 10:22:28 ERROR Analytics data fetch failed: ReportID=67890
+2024-11-18 10:22:32 INFO  Retrying analytics data fetch
+2024-11-18 10:22:36 WARN  Analytics data fetch retry delayed
+2024-11-18 10:22:40 INFO  Analytics data fetched successfully
+2024-11-18 10:22:43 INFO  Starting request handling for /api/logs
+2024-11-18 10:22:45 WARN  Log retrieval delayed
+2024-11-18 10:22:48 ERROR Failed to retrieve logs: LogID=98765
+2024-11-18 10:22:52 INFO  Retrying log retrieval
+2024-11-18 10:22:56 WARN  Log retrieval retry delayed
+2024-11-18 10:23:00 INFO  Logs retrieved successfully
+2024-11-18 10:23:03 INFO  Starting request handling for /api/health
+2024-11-18 10:23:05 WARN  Health check response delayed
+2024-11-18 10:23:08 ERROR Health check failed: ServiceID=12345
+2024-11-18 10:23:12 INFO  Retrying health check
+2024-11-18 10:23:16 WARN  Health check retry delayed
+2024-11-18 10:23:20 INFO  Health check passed successfully
