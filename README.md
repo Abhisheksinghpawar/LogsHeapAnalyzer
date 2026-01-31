@@ -2,6 +2,8 @@
 AI‑powered JVM GC + Application Log Correlation & Insight Console
 A fast, intelligent, and developer‑friendly tool for analyzing JVM GC logs and application logs together — with AI‑generated root‑cause analysis, interactive visualizations, and exportable reports.
 
+![Alt text](img/dashboard.png)
+
 🚀 Key Features (At a Glance)
 
 🔍 GC Log Parsing
